@@ -179,7 +179,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
-  const canCallLiar = !isMyTurn && gameState?.pile_cards.length > 0
+  const canCallLiar = !isMyTurn && (gameState?.pile_cards?.length || 0) > 0
 
   return (
     <div className="container mx-auto py-8 space-y-6">
@@ -241,7 +241,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                     {gameState.last_claim_count}x {gameState.last_claim_rank}
                   </h2>
                   <p className="text-sm text-color-text-secondary mt-2">
-                    📚 Stapel: {gameState.pile_cards.length} Karten
+                    📚 Stapel: {gameState.pile_cards?.length || 0} Karten
                   </p>
                 </>
               ) : (
@@ -252,14 +252,14 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             </div>
           </div>
 
-          {/* LÜGNER-BUTTON - Immer sichtbar wenn jemand anders gespielt hat */}
           {canCallLiar && (
             <div className="card bg-red-500/10 border-2 border-red-500">
               <div className="card__body">
                 <button
                   onClick={handleCallLiar}
                   disabled={loading}
-                  className="btn btn--full-width text-xl py-4 bg-red-500 hover:bg-red-600 text-white font-bold"
+                  className="btn btn--full-width text-xl py-4"
+                  style={{ backgroundColor: '#ef4444', color: 'white' }}
                 >
                   {loading ? 'Prüfe...' : '🚨 LÜGNER! 🚨'}
                 </button>
@@ -271,7 +271,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           )}
 
           {revealedCards && (
-            <div className="card bg-color-bg-1 border-2 border-color-primary animate-pulse">
+            <div className="card bg-color-bg-1 border-2 border-color-primary">
               <div className="card__body text-center">
                 <h3 className="text-2xl font-bold mb-6">{revealMessage}</h3>
                 <p className="text-sm text-color-text-secondary mb-4">Aufgedeckte Karten:</p>
@@ -279,7 +279,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                   {revealedCards.map((card, idx) => {
                     const suitColor = ['♥', '♦'].includes(card.suit) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'
                     return (
-                      <div key={idx} className="w-24 h-36 rounded-xl border-2 border-color-border bg-color-surface flex flex-col items-center justify-center shadow-xl">
+                      <div key={idx} style={{ width: '96px', height: '144px' }} className="rounded-xl border-2 border-color-border bg-color-surface flex flex-col items-center justify-center shadow-xl">
                         <span className={`text-5xl mb-2 ${suitColor}`}>{card.suit}</span>
                         <span className={`text-3xl font-bold ${suitColor}`}>{card.rank}</span>
                       </div>
