@@ -82,11 +82,9 @@ export async function startGame(roomId: string) {
     throw new Error('Mindestens 2 Spieler benötigt')
   }
 
-  // Karten normal verteilen - KEINE Quads beim Start entfernen
   const hands = dealCards(players.length)
   const startPlayerIndex = findClubSeven(hands)
 
-  // Speichere Hände sortiert
   for (let i = 0; i < players.length; i++) {
     await supabase
       .from('players')
@@ -144,12 +142,11 @@ export async function playCards(
     (card: Card) => !cards.some(c => c.id === card.id)
   )
 
-  // Prüfe auf Quads NACH dem Ablegen
-  const removedQuads = [...gameState.removed_quads]
+  const removedQuads = [...(gameState.removed_quads || [])]
   let quads = hasQuads(remainingCards)
   
   while (quads !== null) {
-    remainingCards = remainingCards.filter(card => card.rank !== quads!.rank)
+    remainingCards = remainingCards.filter((card: Card) => card.rank !== quads!.rank)
     if (!removedQuads.includes(quads.rank)) {
       removedQuads.push(quads.rank)
     }
@@ -267,12 +264,11 @@ export async function callLiar(roomId: string, callerId: string) {
 
   let newCards = [...loserPlayer!.cards, ...pileCards]
   
-  // Prüfe auf Quads nach dem Aufnehmen
-  const removedQuads = [...gameState.removed_quads]
+  const removedQuads = [...(gameState.removed_quads || [])]
   let quads = hasQuads(newCards)
   
   while (quads !== null) {
-    newCards = newCards.filter(card => card.rank !== quads!.rank)
+    newCards = newCards.filter((card: Card) => card.rank !== quads!.rank)
     if (!removedQuads.includes(quads.rank)) {
       removedQuads.push(quads.rank)
     }
