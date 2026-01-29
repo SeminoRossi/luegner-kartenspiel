@@ -5,7 +5,7 @@ import { Card } from '@/types/game'
 interface PlayerHandProps {
   cards: Card[]
   selectedCards: Card[]
-  onSelectCard: (card: Card)
+  onSelectCard: (card: Card) => void
   disabled?: boolean
 }
 
