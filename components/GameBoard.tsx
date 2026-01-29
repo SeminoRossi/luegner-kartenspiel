@@ -19,17 +19,20 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const [players, setPlayers] = useState<Player[]>(initialPlayers)
   const [room, setRoom] = useState<GameRoom>(initialRoom)
   const [gameState, setGameState] = useState<GameState | null>(null)
-  const [myPlayer, setMyPlayer] = useState<Player | null>(null)
+  const [myPlayerId, setMyPlayerId] = useState<string>('')
   const [selectedCards, setSelectedCards] = useState<Card[]>([])
   const [claimRank, setClaimRank] = useState<Rank>('7')
   const [loading, setLoading] = useState(false)
   const [revealedCards, setRevealedCards] = useState<Card[] | null>(null)
   const [revealMessage, setRevealMessage] = useState('')
+  const [isShuffling, setIsShuffling] = useState(false)
+
+  const myPlayer = players.find(p => p.id === myPlayerId)
 
   useEffect(() => {
     const playerName = localStorage.getItem('player_name')
     const player = players.find(p => p.player_name === playerName)
-    setMyPlayer(player || null)
+    if (player) setMyPlayerId(player.id)
 
     const playersChannel = supabase
       .channel('players-channel')
@@ -83,7 +86,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       roomChannel.unsubscribe()
       stateChannel.unsubscribe()
     }
-  }, [initialRoom.id])
+  }, [initialRoom.id, players])
 
   async function loadGameState() {
     const { data } = await supabase
@@ -97,10 +100,17 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   async function handleStartGame() {
     setLoading(true)
+    setIsShuffling(true)
+    
     try {
       await startGame(initialRoom.id)
+      
+      setTimeout(() => {
+        setIsShuffling(false)
+      }, 2000)
     } catch (err: any) {
       alert(err.message)
+      setIsShuffling(false)
     } finally {
       setLoading(false)
     }
@@ -167,7 +177,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     }
   }
 
-  const isMyTurn = gameState?.current_player_id === myPlayer?.id
+  const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
 
   return (
@@ -176,7 +186,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         <div className="card__body">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold">Lügner</h1>
+              <h1 className="text-3xl font-bold">🎴 Lügner</h1>
               <p className="text-color-text-secondary">Raum: {roomCode}</p>
             </div>
             <div className="text-right">
@@ -189,6 +199,15 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           </div>
         </div>
       </div>
+
+      {isShuffling && (
+        <div className="card bg-color-bg-1 border-2 border-color-primary">
+          <div className="card__body text-center">
+            <div className="text-6xl mb-4 animate-bounce">🎴</div>
+            <h2 className="text-2xl font-bold">Karten werden gemischt...</h2>
+          </div>
+        </div>
+      )}
 
       {room.status === 'waiting' && (
         <div className="card">
@@ -203,7 +222,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                 disabled={loading}
                 className="btn btn--primary"
               >
-                {loading ? 'Starte...' : 'Spiel starten'}
+                {loading ? 'Starte...' : '🎴 Spiel starten'}
               </button>
             )}
           </div>
@@ -233,23 +252,26 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           </div>
 
           {revealedCards && (
-            <div className="card bg-color-bg-1 border-2 border-color-primary">
+            <div className="card bg-color-bg-1 border-2 border-color-primary animate-pulse">
               <div className="card__body text-center">
                 <h3 className="text-xl font-bold mb-4">{revealMessage}</h3>
                 <div className="flex justify-center gap-2">
-                  {revealedCards.map((card, idx) => (
-                    <div key={idx} className="w-16 h-24 rounded-lg border-2 border-color-border bg-color-surface flex flex-col items-center justify-center">
-                      <span className="text-2xl">{card.suit}</span>
-                      <span className="text-xl">{card.rank}</span>
-                    </div>
-                  ))}
+                  {revealedCards.map((card, idx) => {
+                    const suitColor = ['♥', '♦'].includes(card.suit) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'
+                    return (
+                      <div key={idx} className="w-20 h-28 rounded-lg border-2 border-color-border bg-color-surface flex flex-col items-center justify-center shadow-lg">
+                        <span className={`text-3xl ${suitColor}`}>{card.suit}</span>
+                        <span className={`text-2xl font-bold ${suitColor}`}>{card.rank}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </div>
           )}
 
           <PlayerHand
-            cards={myPlayer.cards}
+            cards={myPlayer.cards || []}
             selectedCards={selectedCards}
             onSelectCard={handleSelectCard}
             disabled={!isMyTurn || loading}
@@ -276,9 +298,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                 <button
                   onClick={handlePlayCards}
                   disabled={selectedCards.length === 0 || loading}
-                  className="btn btn--primary btn--full-width"
+                  className="btn btn--primary btn--full-width text-lg"
                 >
-                  {loading ? 'Lege...' : `${selectedCards.length} Karte(n) ablegen`}
+                  {loading ? 'Lege...' : `🃏 ${selectedCards.length} Karte(n) ablegen`}
                 </button>
               </div>
             </div>
@@ -290,9 +312,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                 <button
                   onClick={handleCallLiar}
                   disabled={loading}
-                  className="btn btn--secondary btn--full-width"
+                  className="btn btn--secondary btn--full-width text-lg"
                 >
-                  {loading ? 'Prüfe...' : '🚨 Lüge!'}
+                  {loading ? 'Prüfe...' : '🚨 Lügner!'}
                 </button>
               </div>
             </div>
@@ -303,7 +325,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       <PlayerList
         players={players}
         currentPlayerId={gameState?.current_player_id || null}
-        myPlayerId={myPlayer?.id || ''}
+        myPlayerId={myPlayerId}
       />
     </div>
   )
