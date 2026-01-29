@@ -59,7 +59,10 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             .select('*')
             .eq('id', initialRoom.id)
             .single()
-          if (data) setRoom(data)
+          if (data) {
+            console.log('Room update:', data)
+            setRoom(data)
+          }
         }
       )
       .subscribe()
@@ -74,7 +77,10 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             .select('*')
             .eq('room_id', initialRoom.id)
             .single()
-          if (data) setGameState(data)
+          if (data) {
+            console.log('Game state update:', data)
+            setGameState(data)
+          }
         }
       )
       .subscribe()
@@ -95,7 +101,10 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .eq('room_id', initialRoom.id)
       .single()
     
-    if (data) setGameState(data)
+    if (data) {
+      console.log('Loaded game state:', data)
+      setGameState(data)
+    }
   }
 
   async function handleStartGame() {
@@ -103,12 +112,29 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     setIsShuffling(true)
     
     try {
-      await startGame(initialRoom.id)
+      console.log('Starting game for room:', initialRoom.id)
+      const result = await startGame(initialRoom.id)
+      console.log('Game started:', result)
+      
+      // Force reload room status
+      const { data: updatedRoom } = await supabase
+        .from('game_rooms')
+        .select('*')
+        .eq('id', initialRoom.id)
+        .single()
+      
+      if (updatedRoom) {
+        console.log('Updated room:', updatedRoom)
+        setRoom(updatedRoom)
+      }
+      
+      await loadGameState()
       
       setTimeout(() => {
         setIsShuffling(false)
       }, 2000)
     } catch (err: any) {
+      console.error('Start game error:', err)
       alert(err.message)
       setIsShuffling(false)
     } finally {
@@ -181,9 +207,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
-  
-  // Lügner-Button Logik: Ich bin am Zug UND es gibt Karten auf dem Stapel (=Vorspieler hat gespielt)
   const canCallLiar = isMyTurn && (gameState?.pile_cards?.length || 0) > 0
+
+  console.log('Render state:', { roomStatus: room.status, gameState, isMyTurn, myPlayerId })
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
