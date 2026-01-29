@@ -1,0 +1,293 @@
+import { supabase } from './supabase'
+import { Card, Player, GameState, Rank } from '@/types/game'
+import { dealCards, findClubSeven, hasQuads } from './cards'
+
+export async function createRoom(hostName: string, roomCode: string) {
+  const { data: room, error: roomError } = await supabase
+    .from('game_rooms')
+    .insert({
+      room_code: roomCode,
+      status: 'waiting',
+      max_players: 8
+    })
+    .select()
+    .single()
+
+  if (roomError) throw roomError
+
+  const { data: player, error: playerError } = await supabase
+    .from('players')
+    .insert({
+      room_id: room.id,
+      player_name: hostName,
+      player_order: 0,
+      is_host: true,
+      cards: []
+    })
+    .select()
+    .single()
+
+  if (playerError) throw playerError
+
+  await supabase
+    .from('game_rooms')
+    .update({ host_id: player.id })
+    .eq('id', room.id)
+
+  return { room, player }
+}
+
+export async function joinRoom(roomCode: string, playerName: string) {
+  const { data: room, error: roomError } = await supabase
+    .from('game_rooms')
+    .select('*')
+    .eq('room_code', roomCode)
+    .single()
+
+  if (roomError) throw new Error('Raum nicht gefunden')
+  if (room.status !== 'waiting') throw new Error('Spiel läuft bereits')
+
+  const { count } = await supabase
+    .from('players')
+    .select('*', { count: 'exact', head: true })
+    .eq('room_id', room.id)
+
+  if (count && count >= room.max_players) throw new Error('Raum voll')
+
+  const { data: player, error: playerError } = await supabase
+    .from('players')
+    .insert({
+      room_id: room.id,
+      player_name: playerName,
+      player_order: count || 0,
+      is_host: false,
+      cards: []
+    })
+    .select()
+    .single()
+
+  if (playerError) throw playerError
+
+  return { room, player }
+}
+
+export async function startGame(roomId: string) {
+  const { data: players, error } = await supabase
+    .from('players')
+    .select('*')
+    .eq('room_id', roomId)
+    .order('player_order')
+
+  if (error || !players || players.length < 2) {
+    throw new Error('Mindestens 2 Spieler benötigt')
+  }
+
+  const hands = dealCards(players.length)
+  const startPlayerIndex = findClubSeven(hands)
+
+  for (let i = 0; i < players.length; i++) {
+    let playerCards = hands[i]
+    
+    let quads = hasQuads(playerCards)
+    while (quads !== null) {
+      playerCards = playerCards.filter(card => card.rank !== quads!.rank)
+      quads = hasQuads(playerCards)
+    }
+
+    await supabase
+      .from('players')
+      .update({ 
+        cards: playerCards,
+        player_order: i 
+      })
+      .eq('id', players[i].id)
+  }
+
+  await supabase
+    .from('game_state')
+    .insert({
+      room_id: roomId,
+      current_player_id: players[startPlayerIndex].id,
+      pile_cards: [],
+      last_claim: null,
+      last_claim_rank: null,
+      last_claim_count: null
+    })
+
+  await supabase
+    .from('game_rooms')
+    .update({ status: 'playing' })
+    .eq('id', roomId)
+
+  return { startPlayerId: players[startPlayerIndex].id }
+}
+
+export async function playCards(
+  roomId: string,
+  playerId: string,
+  cards: Card[],
+  claimRank?: Rank,
+  claimCount?: number
+) {
+  const { data: gameState } = await supabase
+    .from('game_state')
+    .select('*')
+    .eq('room_id', roomId)
+    .single()
+
+  if (!gameState) throw new Error('Spiel nicht gefunden')
+
+  const { data: player } = await supabase
+    .from('players')
+    .select('*')
+    .eq('id', playerId)
+    .single()
+
+  if (!player) throw new Error('Spieler nicht gefunden')
+
+  const remainingCards = player.cards.filter(
+    (card: Card) => !cards.some(c => c.id === card.id)
+  )
+
+  await supabase
+    .from('players')
+    .update({ cards: remainingCards })
+    .eq('id', playerId)
+
+  const newPile = [...gameState.pile_cards, ...cards]
+
+  const { data: allPlayers } = await supabase
+    .from('players')
+    .select('*')
+    .eq('room_id', roomId)
+    .eq('is_active', true)
+    .order('player_order')
+
+  const currentIndex = allPlayers?.findIndex(p => p.id === playerId) || 0
+  const nextPlayer = allPlayers?.[((currentIndex + 1) % (allPlayers?.length || 1))]
+
+  await supabase
+    .from('game_state')
+    .update({
+      pile_cards: newPile,
+      current_player_id: nextPlayer?.id,
+      last_claim: claimRank ? `${claimCount}x ${claimRank}` : gameState.last_claim,
+      last_claim_rank: claimRank || gameState.last_claim_rank,
+      last_claim_count: claimCount || gameState.last_claim_count
+    })
+    .eq('room_id', roomId)
+
+  await supabase
+    .from('game_actions')
+    .insert({
+      room_id: roomId,
+      player_id: playerId,
+      action_type: 'play_card',
+      action_data: {
+        cards_count: cards.length,
+        claim: claimRank ? `${claimCount}x ${claimRank}` : null
+      }
+    })
+
+  if (remainingCards.length === 0) {
+    await supabase
+      .from('players')
+      .update({ is_active: false })
+      .eq('id', playerId)
+
+    const { data: activePlayers } = await supabase
+      .from('players')
+      .select('*')
+      .eq('room_id', roomId)
+      .eq('is_active', true)
+
+    if (activePlayers && activePlayers.length === 1) {
+      await supabase
+        .from('game_rooms')
+        .update({ status: 'finished' })
+        .eq('id', roomId)
+    }
+  }
+}
+
+export async function callLiar(roomId: string, callerId: string) {
+  const { data: gameState } = await supabase
+    .from('game_state')
+    .select('*')
+    .eq('room_id', roomId)
+    .single()
+
+  if (!gameState) throw new Error('Spiel nicht gefunden')
+
+  const { data: lastAction } = await supabase
+    .from('game_actions')
+    .select('*')
+    .eq('room_id', roomId)
+    .eq('action_type', 'play_card')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (!lastAction) throw new Error('Keine letzte Aktion gefunden')
+
+  const lastPlayerId = lastAction.player_id
+  const claimedRank = gameState.last_claim_rank
+  const claimedCount = gameState.last_claim_count
+
+  const pileCards: Card[] = gameState.pile_cards
+  const lastCards = pileCards.slice(-claimedCount!)
+
+  const actualCount = lastCards.filter(card => card.rank === claimedRank).length
+  const wasLying = actualCount !== claimedCount
+
+  let loser: string
+  let winner: string
+
+  if (wasLying) {
+    loser = lastPlayerId!
+    winner = callerId
+  } else {
+    loser = callerId
+    winner = lastPlayerId!
+  }
+
+  const { data: loserPlayer } = await supabase
+    .from('players')
+    .select('*')
+    .eq('id', loser)
+    .single()
+
+  await supabase
+    .from('players')
+    .update({
+      cards: [...loserPlayer!.cards, ...pileCards]
+    })
+    .eq('id', loser)
+
+  await supabase
+    .from('game_state')
+    .update({
+      pile_cards: [],
+      current_player_id: winner,
+      last_claim: null,
+      last_claim_rank: null,
+      last_claim_count: null
+    })
+    .eq('room_id', roomId)
+
+  await supabase
+    .from('game_actions')
+    .insert({
+      room_id: roomId,
+      player_id: callerId,
+      action_type: 'call_liar',
+      action_data: {
+        was_lying: wasLying,
+        revealed_cards: lastCards,
+        loser,
+        winner
+      }
+    })
+
+  return { wasLying, revealedCards: lastCards, loser, winner }
+}
