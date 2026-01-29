@@ -26,6 +26,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const [revealedCards, setRevealedCards] = useState<Card[] | null>(null)
   const [revealMessage, setRevealMessage] = useState('')
   const [isShuffling, setIsShuffling] = useState(false)
+  const [lastPlayerId, setLastPlayerId] = useState<string | null>(null)
 
   const myPlayer = players.find(p => p.id === myPlayerId)
 
@@ -79,12 +80,27 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       )
       .subscribe()
 
+    const actionsChannel = supabase
+      .channel('actions-channel')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'game_actions', filter: `room_id=eq.${initialRoom.id}` },
+        (payload) => {
+          if (payload.new.action_type === 'play_card') {
+            setLastPlayerId(payload.new.player_id)
+          } else if (payload.new.action_type === 'call_liar') {
+            setLastPlayerId(null)
+          }
+        }
+      )
+      .subscribe()
+
     loadGameState()
 
     return () => {
       playersChannel.unsubscribe()
       roomChannel.unsubscribe()
       stateChannel.unsubscribe()
+      actionsChannel.unsubscribe()
     }
   }, [initialRoom.id, players])
 
@@ -96,6 +112,18 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .single()
     
     if (data) setGameState(data)
+
+    const { data: lastAction } = await supabase
+      .from('game_actions')
+      .select('*')
+      .eq('room_id', initialRoom.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    
+    if (lastAction && lastAction.action_type === 'play_card') {
+      setLastPlayerId(lastAction.player_id)
+    }
   }
 
   async function handleStartGame() {
@@ -166,6 +194,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           : '❌ Falsch! Der Spieler hat die Wahrheit gesagt!'
       )
       
+      setLastPlayerId(null)
+      
       setTimeout(() => {
         setRevealedCards(null)
         setRevealMessage('')
@@ -179,7 +209,11 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
-  const canCallLiar = !isMyTurn && (gameState?.pile_cards?.length || 0) > 0
+  
+  const canCallLiar = isMyTurn && 
+                      lastPlayerId !== null && 
+                      lastPlayerId !== myPlayerId && 
+                      (gameState?.pile_cards?.length || 0) > 0
 
   return (
     <div className="container mx-auto py-8 space-y-6">
@@ -297,7 +331,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             disabled={!isMyTurn || loading}
           />
 
-          {isMyTurn && (
+          {isMyTurn && !canCallLiar && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
               <div className="card__body space-y-4">
                 <div className="text-center mb-4">
