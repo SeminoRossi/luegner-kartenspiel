@@ -2,31 +2,33 @@ import { supabase } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
 import GameBoard from '@/components/GameBoard'
 
-export default async function RoomPage({ 
-  params 
-}: { 
-  params: Promise<{ code: string }> 
-}) {
-  const { code } = await params
-  const roomCode = code.toUpperCase()
+interface PageProps {
+  params: Promise<{
+    code: string
+  }>
+}
 
-  const { data: room, error: roomError } = await supabase
+export default async function RoomPage({ params }: PageProps) {
+  const resolvedParams = await params
+  const roomCode = resolvedParams.code.toUpperCase()
+
+  const { data: room } = await supabase
     .from('game_rooms')
     .select('*')
     .eq('room_code', roomCode)
     .single()
 
-  if (roomError || !room) {
+  if (!room) {
     notFound()
   }
 
-  const { data: players, error: playersError } = await supabase
+  const { data: players } = await supabase
     .from('players')
     .select('*')
     .eq('room_id', room.id)
     .order('player_order')
 
-  if (playersError || !players) {
+  if (!players) {
     notFound()
   }
 
