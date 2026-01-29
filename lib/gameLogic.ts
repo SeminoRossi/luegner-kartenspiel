@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { Card, Player, GameState, Rank } from '@/types/game'
-import { dealCards, findClubSeven, hasQuads } from './cards'
+import { dealCards, findClubSeven, hasQuads, sortCards } from './cards'
 
 export async function createRoom(hostName: string, roomCode: string) {
   const { data: room, error: roomError } = await supabase
@@ -82,26 +82,16 @@ export async function startGame(roomId: string) {
     throw new Error('Mindestens 2 Spieler benötigt')
   }
 
+  // Karten normal verteilen - KEINE Quads beim Start entfernen
   const hands = dealCards(players.length)
   const startPlayerIndex = findClubSeven(hands)
-  const removedQuads: Rank[] = []
 
+  // Speichere Hände sortiert
   for (let i = 0; i < players.length; i++) {
-    let playerCards = hands[i]
-    
-    let quads = hasQuads(playerCards)
-    while (quads !== null) {
-      playerCards = playerCards.filter(card => card.rank !== quads!.rank)
-      if (!removedQuads.includes(quads.rank)) {
-        removedQuads.push(quads.rank)
-      }
-      quads = hasQuads(playerCards)
-    }
-
     await supabase
       .from('players')
       .update({ 
-        cards: playerCards,
+        cards: sortCards(hands[i]),
         player_order: i 
       })
       .eq('id', players[i].id)
@@ -116,7 +106,7 @@ export async function startGame(roomId: string) {
       last_claim: null,
       last_claim_rank: null,
       last_claim_count: null,
-      removed_quads: removedQuads
+      removed_quads: []
     })
 
   await supabase
@@ -150,13 +140,25 @@ export async function playCards(
 
   if (!player) throw new Error('Spieler nicht gefunden')
 
-  const remainingCards = player.cards.filter(
+  let remainingCards = player.cards.filter(
     (card: Card) => !cards.some(c => c.id === card.id)
   )
 
+  // Prüfe auf Quads NACH dem Ablegen
+  const removedQuads = [...gameState.removed_quads]
+  let quads = hasQuads(remainingCards)
+  
+  while (quads !== null) {
+    remainingCards = remainingCards.filter(card => card.rank !== quads!.rank)
+    if (!removedQuads.includes(quads.rank)) {
+      removedQuads.push(quads.rank)
+    }
+    quads = hasQuads(remainingCards)
+  }
+
   await supabase
     .from('players')
-    .update({ cards: remainingCards })
+    .update({ cards: sortCards(remainingCards) })
     .eq('id', playerId)
 
   const newPile = [...gameState.pile_cards, ...cards]
@@ -178,7 +180,8 @@ export async function playCards(
       current_player_id: nextPlayer?.id,
       last_claim: claimRank ? `${claimCount}x ${claimRank}` : gameState.last_claim,
       last_claim_rank: claimRank || gameState.last_claim_rank,
-      last_claim_count: claimCount || gameState.last_claim_count
+      last_claim_count: claimCount || gameState.last_claim_count,
+      removed_quads: removedQuads
     })
     .eq('room_id', roomId)
 
@@ -262,10 +265,24 @@ export async function callLiar(roomId: string, callerId: string) {
     .eq('id', loser)
     .single()
 
+  let newCards = [...loserPlayer!.cards, ...pileCards]
+  
+  // Prüfe auf Quads nach dem Aufnehmen
+  const removedQuads = [...gameState.removed_quads]
+  let quads = hasQuads(newCards)
+  
+  while (quads !== null) {
+    newCards = newCards.filter(card => card.rank !== quads!.rank)
+    if (!removedQuads.includes(quads.rank)) {
+      removedQuads.push(quads.rank)
+    }
+    quads = hasQuads(newCards)
+  }
+
   await supabase
     .from('players')
     .update({
-      cards: [...loserPlayer!.cards, ...pileCards]
+      cards: sortCards(newCards)
     })
     .eq('id', loser)
 
@@ -276,7 +293,8 @@ export async function callLiar(roomId: string, callerId: string) {
       current_player_id: winner,
       last_claim: null,
       last_claim_rank: null,
-      last_claim_count: null
+      last_claim_count: null,
+      removed_quads: removedQuads
     })
     .eq('room_id', roomId)
 
