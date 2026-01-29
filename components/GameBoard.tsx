@@ -179,6 +179,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
+  const canCallLiar = !isMyTurn && gameState?.pile_cards.length > 0
 
   return (
     <div className="container mx-auto py-8 space-y-6">
@@ -220,7 +221,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               <button
                 onClick={handleStartGame}
                 disabled={loading}
-                className="btn btn--primary"
+                className="btn btn--primary text-lg px-8 py-3"
               >
                 {loading ? 'Starte...' : '🎴 Spiel starten'}
               </button>
@@ -236,11 +237,11 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               {gameState.last_claim_rank ? (
                 <>
                   <p className="text-color-text-secondary mb-2">Aktuelle Ansage:</p>
-                  <h2 className="text-4xl font-bold text-color-primary">
+                  <h2 className="text-5xl font-bold text-color-primary mb-2">
                     {gameState.last_claim_count}x {gameState.last_claim_rank}
                   </h2>
                   <p className="text-sm text-color-text-secondary mt-2">
-                    Stapel: {gameState.pile_cards.length} Karten
+                    📚 Stapel: {gameState.pile_cards.length} Karten
                   </p>
                 </>
               ) : (
@@ -251,17 +252,36 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             </div>
           </div>
 
+          {/* LÜGNER-BUTTON - Immer sichtbar wenn jemand anders gespielt hat */}
+          {canCallLiar && (
+            <div className="card bg-red-500/10 border-2 border-red-500">
+              <div className="card__body">
+                <button
+                  onClick={handleCallLiar}
+                  disabled={loading}
+                  className="btn btn--full-width text-xl py-4 bg-red-500 hover:bg-red-600 text-white font-bold"
+                >
+                  {loading ? 'Prüfe...' : '🚨 LÜGNER! 🚨'}
+                </button>
+                <p className="text-center text-sm text-color-text-secondary mt-2">
+                  Klicke hier, wenn du denkst dass die Ansage gelogen ist!
+                </p>
+              </div>
+            </div>
+          )}
+
           {revealedCards && (
             <div className="card bg-color-bg-1 border-2 border-color-primary animate-pulse">
               <div className="card__body text-center">
-                <h3 className="text-xl font-bold mb-4">{revealMessage}</h3>
-                <div className="flex justify-center gap-2">
+                <h3 className="text-2xl font-bold mb-6">{revealMessage}</h3>
+                <p className="text-sm text-color-text-secondary mb-4">Aufgedeckte Karten:</p>
+                <div className="flex justify-center gap-3 flex-wrap">
                   {revealedCards.map((card, idx) => {
                     const suitColor = ['♥', '♦'].includes(card.suit) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'
                     return (
-                      <div key={idx} className="w-20 h-28 rounded-lg border-2 border-color-border bg-color-surface flex flex-col items-center justify-center shadow-lg">
-                        <span className={`text-3xl ${suitColor}`}>{card.suit}</span>
-                        <span className={`text-2xl font-bold ${suitColor}`}>{card.rank}</span>
+                      <div key={idx} className="w-24 h-36 rounded-xl border-2 border-color-border bg-color-surface flex flex-col items-center justify-center shadow-xl">
+                        <span className={`text-5xl mb-2 ${suitColor}`}>{card.suit}</span>
+                        <span className={`text-3xl font-bold ${suitColor}`}>{card.rank}</span>
                       </div>
                     )
                   })}
@@ -278,15 +298,21 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           />
 
           {isMyTurn && (
-            <div className="card">
+            <div className="card bg-color-bg-1 border-2 border-color-primary">
               <div className="card__body space-y-4">
+                <div className="text-center mb-4">
+                  <span className="inline-block px-4 py-2 bg-color-primary text-color-btn-primary-text rounded-full font-bold">
+                    ⭐ Du bist am Zug!
+                  </span>
+                </div>
+                
                 {!gameState.last_claim_rank && (
                   <div className="form-group">
-                    <label className="form-label">Ansage wählen:</label>
+                    <label className="form-label text-lg">Wähle deine Ansage:</label>
                     <select
                       value={claimRank}
                       onChange={(e) => setClaimRank(e.target.value as Rank)}
-                      className="form-control"
+                      className="form-control text-xl py-3"
                     >
                       {RANKS.map(rank => (
                         <option key={rank} value={rank}>{rank}</option>
@@ -298,23 +324,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                 <button
                   onClick={handlePlayCards}
                   disabled={selectedCards.length === 0 || loading}
-                  className="btn btn--primary btn--full-width text-lg"
+                  className="btn btn--primary btn--full-width text-xl py-4"
                 >
                   {loading ? 'Lege...' : `🃏 ${selectedCards.length} Karte(n) ablegen`}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!isMyTurn && gameState.pile_cards.length > 0 && (
-            <div className="card">
-              <div className="card__body">
-                <button
-                  onClick={handleCallLiar}
-                  disabled={loading}
-                  className="btn btn--secondary btn--full-width text-lg"
-                >
-                  {loading ? 'Prüfe...' : '🚨 Lügner!'}
                 </button>
               </div>
             </div>
