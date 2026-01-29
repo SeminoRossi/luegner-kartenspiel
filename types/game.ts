@@ -36,6 +36,7 @@ export interface GameState {
   last_claim: string | null
   last_claim_rank: Rank | null
   last_claim_count: number | null
+  removed_quads: Rank[]
   updated_at: string
 }
 

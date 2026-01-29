@@ -84,6 +84,7 @@ export async function startGame(roomId: string) {
 
   const hands = dealCards(players.length)
   const startPlayerIndex = findClubSeven(hands)
+  const removedQuads: Rank[] = []
 
   for (let i = 0; i < players.length; i++) {
     let playerCards = hands[i]
@@ -91,6 +92,9 @@ export async function startGame(roomId: string) {
     let quads = hasQuads(playerCards)
     while (quads !== null) {
       playerCards = playerCards.filter(card => card.rank !== quads!.rank)
+      if (!removedQuads.includes(quads.rank)) {
+        removedQuads.push(quads.rank)
+      }
       quads = hasQuads(playerCards)
     }
 
@@ -111,7 +115,8 @@ export async function startGame(roomId: string) {
       pile_cards: [],
       last_claim: null,
       last_claim_rank: null,
-      last_claim_count: null
+      last_claim_count: null,
+      removed_quads: removedQuads
     })
 
   await supabase

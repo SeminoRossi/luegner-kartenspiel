@@ -62,6 +62,14 @@ export function hasQuads(cards: Card[]): { rank: Rank; cards: Card[] } | null {
   return null
 }
 
+export function sortCards(cards: Card[]): Card[] {
+  const rankOrder: Record<Rank, number> = {
+    '7': 0, '8': 1, '9': 2, '10': 3, 'J': 4, 'Q': 5, 'K': 6, 'A': 7
+  }
+  
+  return [...cards].sort((a, b) => rankOrder[a.rank] - rankOrder[b.rank])
+}
+
 export function generateRoomCode(): string {
   return Math.random().toString(36).substring(2, 8).toUpperCase()
 }
