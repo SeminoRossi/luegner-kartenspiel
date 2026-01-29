@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Player, GameState, GameRoom, Card, Rank } from '@/types/game'
 import { startGame, playCards, callLiar } from '@/lib/gameLogic'
@@ -26,9 +26,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const [revealedCards, setRevealedCards] = useState<Card[] | null>(null)
   const [revealMessage, setRevealMessage] = useState('')
   const [isShuffling, setIsShuffling] = useState(false)
-  const [canShowLiarButton, setCanShowLiarButton] = useState(false)
-  
-  const previousPlayerIdRef = useRef<string | null>(null)
 
   const myPlayer = players.find(p => p.id === myPlayerId)
 
@@ -91,25 +88,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     }
   }, [initialRoom.id, players])
 
-  useEffect(() => {
-    if (!gameState || !myPlayerId) return
-
-    const currentPlayerId = gameState.current_player_id
-    const previousPlayerId = previousPlayerIdRef.current
-
-    if (currentPlayerId === myPlayerId && 
-        previousPlayerId !== null && 
-        previousPlayerId !== myPlayerId &&
-        gameState.pile_cards && 
-        gameState.pile_cards.length > 0) {
-      setCanShowLiarButton(true)
-    } else {
-      setCanShowLiarButton(false)
-    }
-
-    previousPlayerIdRef.current = currentPlayerId
-  }, [gameState?.current_player_id, myPlayerId, gameState?.pile_cards])
-
   async function loadGameState() {
     const { data } = await supabase
       .from('game_state')
@@ -117,10 +95,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .eq('room_id', initialRoom.id)
       .single()
     
-    if (data) {
-      setGameState(data)
-      previousPlayerIdRef.current = data.current_player_id
-    }
+    if (data) setGameState(data)
   }
 
   async function handleStartGame() {
@@ -158,7 +133,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     if (!myPlayer) return
 
     setLoading(true)
-    setCanShowLiarButton(false)
     
     try {
       const isFirstRound = !gameState?.last_claim_rank
@@ -183,7 +157,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     if (!myPlayer) return
 
     setLoading(true)
-    setCanShowLiarButton(false)
     
     try {
       const result = await callLiar(initialRoom.id, myPlayer.id)
@@ -208,6 +181,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
+  
+  // Lügner-Button Logik: Ich bin am Zug UND es gibt Karten auf dem Stapel (=Vorspieler hat gespielt)
+  const canCallLiar = isMyTurn && (gameState?.pile_cards?.length || 0) > 0
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
@@ -280,24 +256,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             </div>
           </div>
 
-          {canShowLiarButton && isMyTurn && (
-            <div className="card bg-red-500/10 border-2 border-red-500">
-              <div className="card__body">
-                <button
-                  onClick={handleCallLiar}
-                  disabled={loading}
-                  className="btn btn--full-width text-lg md:text-xl py-3 md:py-4"
-                  style={{ backgroundColor: '#ef4444', color: 'white', fontWeight: 'bold' }}
-                >
-                  {loading ? 'Prüfe...' : '🚨 LÜGNER! 🚨'}
-                </button>
-                <p className="text-center text-xs md:text-sm text-color-text-secondary mt-2">
-                  Vorspieler hat gelogen?
-                </p>
-              </div>
-            </div>
-          )}
-
           {revealedCards && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
               <div className="card__body text-center">
@@ -325,7 +283,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             disabled={!isMyTurn || loading}
           />
 
-          {isMyTurn && !canShowLiarButton && (
+          {isMyTurn && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
               <div className="card__body space-y-3 md:space-y-4">
                 <div className="text-center mb-2 md:mb-4">
@@ -333,6 +291,17 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                     ⭐ Du bist am Zug!
                   </span>
                 </div>
+
+                {canCallLiar && (
+                  <button
+                    onClick={handleCallLiar}
+                    disabled={loading}
+                    className="btn btn--full-width text-lg md:text-xl py-3 md:py-4 mb-3 md:mb-4"
+                    style={{ backgroundColor: '#ef4444', color: 'white', fontWeight: 'bold' }}
+                  >
+                    {loading ? 'Prüfe...' : '🚨 LÜGNER! 🚨'}
+                  </button>
+                )}
                 
                 {!gameState.last_claim_rank && (
                   <div className="form-group">
