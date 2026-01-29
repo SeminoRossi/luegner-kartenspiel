@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Player, GameState, GameRoom, Card, Rank } from '@/types/game'
 import { startGame, playCards, callLiar } from '@/lib/gameLogic'
@@ -26,7 +26,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const [revealedCards, setRevealedCards] = useState<Card[] | null>(null)
   const [revealMessage, setRevealMessage] = useState('')
   const [isShuffling, setIsShuffling] = useState(false)
-  const [lastPlayerId, setLastPlayerId] = useState<string | null>(null)
+  const [canShowLiarButton, setCanShowLiarButton] = useState(false)
+  
+  const previousPlayerIdRef = useRef<string | null>(null)
 
   const myPlayer = players.find(p => p.id === myPlayerId)
 
@@ -80,29 +82,33 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       )
       .subscribe()
 
-    const actionsChannel = supabase
-      .channel('actions-channel')
-      .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'game_actions', filter: `room_id=eq.${initialRoom.id}` },
-        (payload) => {
-          if (payload.new.action_type === 'play_card') {
-            setLastPlayerId(payload.new.player_id)
-          } else if (payload.new.action_type === 'call_liar') {
-            setLastPlayerId(null)
-          }
-        }
-      )
-      .subscribe()
-
     loadGameState()
 
     return () => {
       playersChannel.unsubscribe()
       roomChannel.unsubscribe()
       stateChannel.unsubscribe()
-      actionsChannel.unsubscribe()
     }
   }, [initialRoom.id, players])
+
+  useEffect(() => {
+    if (!gameState || !myPlayerId) return
+
+    const currentPlayerId = gameState.current_player_id
+    const previousPlayerId = previousPlayerIdRef.current
+
+    if (currentPlayerId === myPlayerId && 
+        previousPlayerId !== null && 
+        previousPlayerId !== myPlayerId &&
+        gameState.pile_cards && 
+        gameState.pile_cards.length > 0) {
+      setCanShowLiarButton(true)
+    } else {
+      setCanShowLiarButton(false)
+    }
+
+    previousPlayerIdRef.current = currentPlayerId
+  }, [gameState?.current_player_id, myPlayerId, gameState?.pile_cards])
 
   async function loadGameState() {
     const { data } = await supabase
@@ -111,18 +117,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .eq('room_id', initialRoom.id)
       .single()
     
-    if (data) setGameState(data)
-
-    const { data: lastAction } = await supabase
-      .from('game_actions')
-      .select('*')
-      .eq('room_id', initialRoom.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-    
-    if (lastAction && lastAction.action_type === 'play_card') {
-      setLastPlayerId(lastAction.player_id)
+    if (data) {
+      setGameState(data)
+      previousPlayerIdRef.current = data.current_player_id
     }
   }
 
@@ -161,6 +158,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     if (!myPlayer) return
 
     setLoading(true)
+    setCanShowLiarButton(false)
+    
     try {
       const isFirstRound = !gameState?.last_claim_rank
       
@@ -184,6 +183,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     if (!myPlayer) return
 
     setLoading(true)
+    setCanShowLiarButton(false)
+    
     try {
       const result = await callLiar(initialRoom.id, myPlayer.id)
       
@@ -193,8 +194,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           ? '🎉 Richtig! Der Spieler hat gelogen!' 
           : '❌ Falsch! Der Spieler hat die Wahrheit gesagt!'
       )
-      
-      setLastPlayerId(null)
       
       setTimeout(() => {
         setRevealedCards(null)
@@ -209,26 +208,21 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
-  
-  const canCallLiar = isMyTurn && 
-                      lastPlayerId !== null && 
-                      lastPlayerId !== myPlayerId && 
-                      (gameState?.pile_cards?.length || 0) > 0
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
       <div className="card">
         <div className="card__body">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold">🎴 Lügner</h1>
-              <p className="text-color-text-secondary">Raum: {roomCode}</p>
+              <h1 className="text-2xl md:text-3xl font-bold">🎴 Lügner</h1>
+              <p className="text-sm md:text-base text-color-text-secondary">Raum: {roomCode}</p>
             </div>
             <div className="text-right">
-              <div className="status status--info">
-                {room.status === 'waiting' && 'Warte auf Spieler...'}
-                {room.status === 'playing' && 'Spiel läuft'}
-                {room.status === 'finished' && 'Spiel beendet'}
+              <div className="status status--info text-xs md:text-sm">
+                {room.status === 'waiting' && 'Warte...'}
+                {room.status === 'playing' && 'Läuft'}
+                {room.status === 'finished' && 'Beendet'}
               </div>
             </div>
           </div>
@@ -238,8 +232,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       {isShuffling && (
         <div className="card bg-color-bg-1 border-2 border-color-primary">
           <div className="card__body text-center">
-            <div className="text-6xl mb-4 animate-bounce">🎴</div>
-            <h2 className="text-2xl font-bold">Karten werden gemischt...</h2>
+            <div className="text-4xl md:text-6xl mb-4 animate-bounce">🎴</div>
+            <h2 className="text-xl md:text-2xl font-bold">Karten werden gemischt...</h2>
           </div>
         </div>
       )}
@@ -247,15 +241,15 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       {room.status === 'waiting' && (
         <div className="card">
           <div className="card__body text-center">
-            <h2 className="text-xl font-semibold mb-4">Warte auf Spieler (min. 2)</h2>
-            <p className="text-color-text-secondary mb-6">
-              Teile den Code <span className="font-mono font-bold text-color-primary">{roomCode}</span> mit deinen Freunden!
+            <h2 className="text-lg md:text-xl font-semibold mb-4">Warte auf Spieler (min. 2)</h2>
+            <p className="text-sm md:text-base text-color-text-secondary mb-6">
+              Code: <span className="font-mono font-bold text-color-primary text-lg md:text-xl">{roomCode}</span>
             </p>
             {canStart && (
               <button
                 onClick={handleStartGame}
                 disabled={loading}
-                className="btn btn--primary text-lg px-8 py-3"
+                className="btn btn--primary text-base md:text-lg px-6 md:px-8 py-2 md:py-3"
               >
                 {loading ? 'Starte...' : '🎴 Spiel starten'}
               </button>
@@ -270,35 +264,35 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             <div className="card__body text-center">
               {gameState.last_claim_rank ? (
                 <>
-                  <p className="text-color-text-secondary mb-2">Aktuelle Ansage:</p>
-                  <h2 className="text-5xl font-bold text-color-primary mb-2">
+                  <p className="text-xs md:text-sm text-color-text-secondary mb-2">Aktuelle Ansage:</p>
+                  <h2 className="text-4xl md:text-5xl font-bold text-color-primary mb-2">
                     {gameState.last_claim_count}x {gameState.last_claim_rank}
                   </h2>
-                  <p className="text-sm text-color-text-secondary mt-2">
+                  <p className="text-xs md:text-sm text-color-text-secondary mt-2">
                     📚 Stapel: {gameState.pile_cards?.length || 0} Karten
                   </p>
                 </>
               ) : (
-                <p className="text-xl text-color-text-secondary">
+                <p className="text-base md:text-xl text-color-text-secondary">
                   Erste Ansage wählen...
                 </p>
               )}
             </div>
           </div>
 
-          {canCallLiar && (
+          {canShowLiarButton && isMyTurn && (
             <div className="card bg-red-500/10 border-2 border-red-500">
               <div className="card__body">
                 <button
                   onClick={handleCallLiar}
                   disabled={loading}
-                  className="btn btn--full-width text-xl py-4"
-                  style={{ backgroundColor: '#ef4444', color: 'white' }}
+                  className="btn btn--full-width text-lg md:text-xl py-3 md:py-4"
+                  style={{ backgroundColor: '#ef4444', color: 'white', fontWeight: 'bold' }}
                 >
                   {loading ? 'Prüfe...' : '🚨 LÜGNER! 🚨'}
                 </button>
-                <p className="text-center text-sm text-color-text-secondary mt-2">
-                  Klicke hier, wenn du denkst dass die Ansage gelogen ist!
+                <p className="text-center text-xs md:text-sm text-color-text-secondary mt-2">
+                  Vorspieler hat gelogen?
                 </p>
               </div>
             </div>
@@ -307,15 +301,15 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           {revealedCards && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
               <div className="card__body text-center">
-                <h3 className="text-2xl font-bold mb-6">{revealMessage}</h3>
-                <p className="text-sm text-color-text-secondary mb-4">Aufgedeckte Karten:</p>
-                <div className="flex justify-center gap-3 flex-wrap">
+                <h3 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">{revealMessage}</h3>
+                <p className="text-xs md:text-sm text-color-text-secondary mb-3 md:mb-4">Aufgedeckte Karten:</p>
+                <div className="flex justify-center gap-2 md:gap-3 flex-wrap">
                   {revealedCards.map((card, idx) => {
                     const suitColor = ['♥', '♦'].includes(card.suit) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'
                     return (
-                      <div key={idx} style={{ width: '96px', height: '144px' }} className="rounded-xl border-2 border-color-border bg-color-surface flex flex-col items-center justify-center shadow-xl">
-                        <span className={`text-5xl mb-2 ${suitColor}`}>{card.suit}</span>
-                        <span className={`text-3xl font-bold ${suitColor}`}>{card.rank}</span>
+                      <div key={idx} style={{ width: '80px', height: '120px' }} className="md:w-24 md:h-36 rounded-xl border-2 border-color-border bg-color-surface flex flex-col items-center justify-center shadow-xl">
+                        <span className={`text-4xl md:text-5xl mb-1 md:mb-2 ${suitColor}`}>{card.suit}</span>
+                        <span className={`text-2xl md:text-3xl font-bold ${suitColor}`}>{card.rank}</span>
                       </div>
                     )
                   })}
@@ -331,22 +325,22 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             disabled={!isMyTurn || loading}
           />
 
-          {isMyTurn && !canCallLiar && (
+          {isMyTurn && !canShowLiarButton && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
-              <div className="card__body space-y-4">
-                <div className="text-center mb-4">
-                  <span className="inline-block px-4 py-2 bg-color-primary text-color-btn-primary-text rounded-full font-bold">
+              <div className="card__body space-y-3 md:space-y-4">
+                <div className="text-center mb-2 md:mb-4">
+                  <span className="inline-block px-3 md:px-4 py-1 md:py-2 bg-color-primary text-color-btn-primary-text rounded-full font-bold text-sm md:text-base">
                     ⭐ Du bist am Zug!
                   </span>
                 </div>
                 
                 {!gameState.last_claim_rank && (
                   <div className="form-group">
-                    <label className="form-label text-lg">Wähle deine Ansage:</label>
+                    <label className="form-label text-base md:text-lg">Wähle deine Ansage:</label>
                     <select
                       value={claimRank}
                       onChange={(e) => setClaimRank(e.target.value as Rank)}
-                      className="form-control text-xl py-3"
+                      className="form-control text-lg md:text-xl py-2 md:py-3"
                     >
                       {RANKS.map(rank => (
                         <option key={rank} value={rank}>{rank}</option>
@@ -358,7 +352,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                 <button
                   onClick={handlePlayCards}
                   disabled={selectedCards.length === 0 || loading}
-                  className="btn btn--primary btn--full-width text-xl py-4"
+                  className="btn btn--primary btn--full-width text-lg md:text-xl py-3 md:py-4"
                 >
                   {loading ? 'Lege...' : `🃏 ${selectedCards.length} Karte(n) ablegen`}
                 </button>
