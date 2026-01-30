@@ -115,6 +115,39 @@ export async function startGame(roomId: string) {
   return { startPlayerId: players[startPlayerIndex].id }
 }
 
+async function checkGameEnd(roomId: string) {
+  // Hole alle Spieler mit ihren Platzierungen
+  const { data: allPlayers } = await supabase
+    .from('players')
+    .select('*')
+    .eq('room_id', roomId)
+    .order('player_order')
+
+  if (!allPlayers) return
+
+  // Zähle wie viele Spieler bereits platziert sind
+  const placedPlayers = allPlayers.filter(p => p.placement !== null)
+  const activePlayers = allPlayers.filter(p => p.is_active === true)
+
+  // Wenn nur noch 1 aktiver Spieler übrig ist = Verlierer (letzter Platz)
+  if (activePlayers.length === 1) {
+    const lastPlace = allPlayers.length
+    
+    await supabase
+      .from('players')
+      .update({ 
+        placement: lastPlace,
+        is_active: false 
+      })
+      .eq('id', activePlayers[0].id)
+
+    await supabase
+      .from('game_rooms')
+      .update({ status: 'finished' })
+      .eq('id', roomId)
+  }
+}
+
 export async function playCards(
   roomId: string,
   playerId: string,
@@ -194,24 +227,27 @@ export async function playCards(
       }
     })
 
+  // Wenn Spieler keine Karten mehr hat → Platzierung vergeben
   if (remainingCards.length === 0) {
-    await supabase
-      .from('players')
-      .update({ is_active: false })
-      .eq('id', playerId)
-
-    const { data: activePlayers } = await supabase
+    // Zähle wie viele Spieler bereits eine Platzierung haben
+    const { data: placedPlayers } = await supabase
       .from('players')
       .select('*')
       .eq('room_id', roomId)
-      .eq('is_active', true)
+      .not('placement', 'is', null)
 
-    if (activePlayers && activePlayers.length === 1) {
-      await supabase
-        .from('game_rooms')
-        .update({ status: 'finished' })
-        .eq('id', roomId)
-    }
+    const nextPlacement = (placedPlayers?.length || 0) + 1
+
+    await supabase
+      .from('players')
+      .update({ 
+        placement: nextPlacement,
+        is_active: false 
+      })
+      .eq('id', playerId)
+
+    // Check ob Spiel vorbei ist
+    await checkGameEnd(roomId)
   }
 }
 
@@ -278,7 +314,8 @@ export async function callLiar(roomId: string, callerId: string) {
   await supabase
     .from('players')
     .update({
-      cards: sortCards(newCards)
+      cards: sortCards(newCards),
+      is_active: true  // Spieler wird wieder aktiv wenn er Karten bekommt
     })
     .eq('id', loser)
 
@@ -307,6 +344,9 @@ export async function callLiar(roomId: string, callerId: string) {
         winner
       }
     })
+
+  // Check ob Spiel vorbei ist
+  await checkGameEnd(roomId)
 
   return { wasLying, revealedCards: lastCards, loser, winner }
 }
