@@ -245,10 +245,12 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   // Bestimme welcher Suit für die Ansage-Karte angezeigt wird
   const getClaimSuit = (rank: string) => {
-    // Karo für rote Karten (7, 9, J, K), Pik für schwarze (8, 10, Q, A)
     const redRanks = ['7', '9', 'J', 'K']
     return redRanks.includes(rank) ? '♦' : '♠'
   }
+
+  // Friedhof: Entfernte 4er
+  const removedQuads = gameState?.removed_quads || []
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
@@ -269,6 +271,36 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           </div>
         </div>
       </div>
+
+      {/* Friedhof - Entfernte 4er */}
+      {room.status === 'playing' && removedQuads.length > 0 && (
+        <div className="card bg-color-bg-4">
+          <div className="card__body">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🪦</span>
+                <h3 className="text-sm md:text-base font-semibold">Friedhof</h3>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {removedQuads.map((rank, idx) => {
+                  const suit = getClaimSuit(rank)
+                  const suitColor = ['♥', '♦'].includes(suit) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'
+                  return (
+                    <div 
+                      key={idx}
+                      style={{ width: '50px', height: '75px' }}
+                      className="rounded-lg border-2 border-gray-400 bg-gray-200 dark:bg-gray-700 flex flex-col items-center justify-center opacity-70"
+                    >
+                      <span className={`text-2xl ${suitColor}`}>{suit}</span>
+                      <span className={`text-lg font-bold ${suitColor}`}>{rank}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isShuffling && (
         <div className="card bg-color-bg-1 border-2 border-color-primary">

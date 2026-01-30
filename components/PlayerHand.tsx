@@ -25,8 +25,8 @@ export default function PlayerHand({ cards, selectedCards, onSelectCard, disable
                 onClick={() => !disabled && onSelectCard(card)}
                 disabled={disabled}
                 style={{ 
-                  width: '120px',  // Mobile: 120px, Desktop bleibt 160px via md:
-                  height: '180px'  // Mobile: 180px, Desktop bleibt 240px via md:
+                  width: '100px',  // Mobile: noch kleiner (vorher 120px)
+                  height: '150px'  // Mobile: noch kleiner (vorher 180px)
                 }}
                 className={`
                   md:w-[160px] md:h-[240px]
@@ -39,8 +39,8 @@ export default function PlayerHand({ cards, selectedCards, onSelectCard, disable
                   ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-xl hover:scale-105'}
                 `}
               >
-                <span className={`text-5xl md:text-7xl mb-2 md:mb-3 ${suitColor}`}>{card.suit}</span>
-                <span className={`text-3xl md:text-5xl font-bold ${suitColor}`}>{card.rank}</span>
+                <span className={`text-4xl md:text-7xl mb-1 md:mb-3 ${suitColor}`}>{card.suit}</span>
+                <span className={`text-2xl md:text-5xl font-bold ${suitColor}`}>{card.rank}</span>
               </button>
             )
           })}
