@@ -18,6 +18,7 @@ export interface Player {
   created_at?: string
   placement?: number | null
   is_winner?: boolean | null
+  ready_for_rematch?: boolean
 }
 
 export interface GameRoom {
