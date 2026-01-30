@@ -139,7 +139,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       )
       .subscribe()
 
-    // Emoji Reactions Channel
     const emojiChannel = supabase
       .channel('emoji-realtime-channel')
       .on('postgres_changes',
@@ -159,7 +158,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     reloadAllData()
     loadEmojiReactions()
 
-    // Auto-cleanup alte Emojis alle 2 Sekunden
     const cleanupInterval = setInterval(async () => {
       await supabase.rpc('delete_old_emoji_reactions')
     }, 2000)
@@ -319,7 +317,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
-      {/* Emoji Display - schwebt über allem */}
       <EmojiDisplay reactions={emojiReactions} />
 
       <div className="card">
@@ -330,7 +327,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               <p className="text-sm md:text-base text-color-text-secondary">Raum: {roomCode}</p>
             </div>
             <div className="flex items-center gap-3">
-              {/* Emoji Button immer sichtbar wenn im Spiel */}
               {room.status === 'playing' && myPlayer && (
                 <EmojiPanel onSendEmoji={sendEmoji} disabled={loading} />
               )}
@@ -569,22 +565,24 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
           {isMyTurn && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
-              <div className="card__body space-y-5">
+              <div className="card__body space-y-6">
                 <div className="text-center">
-                  <span className="inline-block px-5 py-3 bg-color-primary text-color-btn-primary-text rounded-full font-bold text-lg md:text-xl">
+                  <span className="inline-block px-6 py-4 bg-color-primary text-color-btn-primary-text rounded-full font-bold text-xl md:text-2xl">
                     ⭐ Du bist am Zug!
                   </span>
                 </div>
 
-                <div className="flex justify-center gap-4">
+                {/* BUTTONS - NOCH GRÖßER mit mehr Abstand */}
+                <div className="flex justify-center gap-6 md:gap-8">
                   {canCallLiar && (
                     <button
                       onClick={handleCallLiar}
                       disabled={loading}
-                      className="w-40 md:w-48 rounded-2xl text-white font-bold text-xl md:text-2xl py-8 md:py-10 transition-all duration-200 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-44 md:w-56 rounded-2xl text-white font-extrabold text-xl md:text-3xl py-10 md:py-12 transition-all duration-200 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-2"
                       style={{ backgroundColor: '#ef4444' }}
                     >
-                      {loading ? '⏳' : '🚨 LÜGNER!'}
+                      <span className="text-3xl md:text-4xl">🚨</span>
+                      <span>{loading ? 'Prüfe...' : 'LÜGNER!'}</span>
                     </button>
                   )}
                   
@@ -592,22 +590,23 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                     <button
                       onClick={handlePlayCards}
                       disabled={selectedCards.length === 0 || loading}
-                      className="w-40 md:w-48 rounded-2xl bg-color-primary text-color-btn-primary-text font-bold text-xl md:text-2xl py-8 md:py-10 transition-all duration-200 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-44 md:w-56 rounded-2xl bg-color-primary text-color-btn-primary-text font-extrabold text-xl md:text-3xl py-10 md:py-12 transition-all duration-200 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-2"
                     >
-                      {loading ? '⏳' : `🃏 ${selectedCards.length || '0'}`}
+                      <span className="text-3xl md:text-4xl">🃏</span>
+                      <span>{loading ? 'Lege...' : `${selectedCards.length || '0'} ABLEGEN`}</span>
                     </button>
                   )}
                 </div>
                 
                 {!gameState.last_claim_rank && myPlayer.cards && myPlayer.cards.length > 0 && availableRanks.length > 0 && (
-                  <div className="form-group mt-5">
-                    <label className="form-label text-lg md:text-xl mb-3 font-semibold text-center block">
+                  <div className="form-group mt-6">
+                    <label className="form-label text-xl md:text-2xl mb-4 font-bold text-center block">
                       Wähle deine Ansage:
                     </label>
                     <select
                       value={claimRank}
                       onChange={(e) => setClaimRank(e.target.value as Rank)}
-                      className="form-control text-xl md:text-2xl py-4 font-bold text-center"
+                      className="form-control text-2xl md:text-3xl py-5 font-bold text-center"
                     >
                       {availableRanks.map(rank => (
                         <option key={rank} value={rank}>{rank}</option>

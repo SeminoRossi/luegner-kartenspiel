@@ -7,7 +7,7 @@ interface EmojiPanelProps {
   disabled?: boolean
 }
 
-const EMOJIS = ['👍', '❤️', '😂', '🎉', '😱', '🔥', '💪', '👎', '😎', '🤔']
+const EMOJIS = ['👍', '❤️', '😂', '🎉', '😱', '🔥', '💪', '👎', '😎', '🤔', '🖕']
 
 export default function EmojiPanel({ onSendEmoji, disabled = false }: EmojiPanelProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -36,7 +36,7 @@ export default function EmojiPanel({ onSendEmoji, disabled = false }: EmojiPanel
             onClick={() => setIsOpen(false)}
           />
           
-          {/* Emoji-Grid */}
+          {/* Emoji-Grid - jetzt 11 Emojis */}
           <div className="absolute bottom-full left-0 mb-2 bg-color-surface border-2 border-color-border rounded-xl shadow-2xl p-3 z-20">
             <div className="grid grid-cols-5 gap-2">
               {EMOJIS.map((emoji, idx) => (
