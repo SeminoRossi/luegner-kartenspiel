@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Player, GameState, GameRoom, Card, Rank } from '@/types/game'
-import { startGame, playCards, callLiar } from '@/lib/gameLogic'
+import { startGame, playCards, callLiar, requestRematch } from '@/lib/gameLogic'
 import PlayerList from './PlayerList'
 import PlayerHand from './PlayerHand'
 
@@ -37,6 +37,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const rankedPlayers = [...players]
     .filter(p => p.placement !== null)
     .sort((a, b) => (a.placement || 0) - (b.placement || 0))
+
+  const readyForRematchCount = players.filter(p => p.ready_for_rematch === true).length
+  const allPlayersReady = readyForRematchCount === players.length && players.length > 0
 
   useEffect(() => {
     const playerName = localStorage.getItem('player_name')
@@ -135,6 +138,42 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     }
   }
 
+  async function handleRematch() {
+    if (!myPlayer) return
+    
+    setLoading(true)
+    setIsShuffling(true)
+    
+    try {
+      await requestRematch(initialRoom.id, myPlayer.id)
+      
+      // Warte kurz und refresh die Daten
+      setTimeout(async () => {
+        const { data: updatedRoom } = await supabase
+          .from('game_rooms')
+          .select('*')
+          .eq('id', initialRoom.id)
+          .single()
+        
+        if (updatedRoom) setRoom(updatedRoom)
+        await loadGameState()
+        
+        if (updatedRoom?.status === 'playing') {
+          setTimeout(() => {
+            setIsShuffling(false)
+          }, 2000)
+        } else {
+          setIsShuffling(false)
+        }
+      }, 500)
+    } catch (err: any) {
+      alert(err.message)
+      setIsShuffling(false)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   function handleSelectCard(card: Card) {
     if (selectedCards.some(c => c.id === card.id)) {
       setSelectedCards(selectedCards.filter(c => c.id !== card.id))
@@ -201,6 +240,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
   const canCallLiar = isMyTurn && (gameState?.pile_cards?.length || 0) > 0
+  const myPlayerReady = myPlayer?.ready_for_rematch === true
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
@@ -237,7 +277,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             <div className="text-5xl md:text-7xl mb-6 animate-bounce">🏁</div>
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-8">Endstand</h2>
             
-            <div className="space-y-4">
+            <div className="space-y-4 mb-8">
               {rankedPlayers.map(player => {
                 const isMe = player.id === myPlayerId
                 const placement = player.placement || 0
@@ -282,6 +322,31 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                   </div>
                 )
               })}
+            </div>
+
+            <div className="mt-8 p-6 bg-white/10 rounded-xl">
+              <p className="text-white text-lg mb-4">
+                {myPlayerReady 
+                  ? '✅ Du bist bereit!' 
+                  : 'Möchtest du nochmal spielen?'}
+              </p>
+              <p className="text-white/80 text-sm mb-6">
+                {readyForRematchCount} / {players.length} Spieler bereit
+              </p>
+              
+              <button
+                onClick={handleRematch}
+                disabled={loading || myPlayerReady}
+                className={`btn ${myPlayerReady ? 'btn--secondary' : 'btn--primary'} text-lg md:text-xl px-8 py-4`}
+              >
+                {loading ? '⏳ Warte...' : myPlayerReady ? '✅ Bereit!' : '🔄 Nochmal spielen'}
+              </button>
+
+              {allPlayersReady && !loading && (
+                <p className="text-yellow-300 font-bold text-xl mt-4 animate-pulse">
+                  🎉 Alle bereit! Spiel startet...
+                </p>
+              )}
             </div>
           </div>
         </div>
