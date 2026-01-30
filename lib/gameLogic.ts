@@ -124,7 +124,7 @@ export async function startGame(roomId: string) {
   return { startPlayerId: players[startPlayerIndex].id }
 }
 
-// Vergebe Platzierungen und check ob Spiel vorbei ist
+// KRITISCHER FIX: Nur Spieler mit 0 Karten bekommen Platzierung!
 async function assignPlacements(roomId: string) {
   const { data: allPlayers } = await supabase
     .from('players')
@@ -134,13 +134,13 @@ async function assignPlacements(roomId: string) {
 
   if (!allPlayers) return
 
-  // Spieler die 0 Karten haben und noch keine Platzierung
-  const playersWithNoCards = allPlayers.filter(p => 
+  // NUR Spieler die 0 Karten haben und noch keine Platzierung
+  const playersWithNoCardsNeedingPlacement = allPlayers.filter(p => 
     (p.cards?.length || 0) === 0 && p.placement === null
   )
 
   // Vergebe Platzierungen für Spieler mit 0 Karten
-  for (const player of playersWithNoCards) {
+  for (const player of playersWithNoCardsNeedingPlacement) {
     const placedPlayers = allPlayers.filter(p => p.placement !== null)
     const nextPlacement = placedPlayers.length + 1
 
@@ -161,33 +161,43 @@ async function assignPlacements(roomId: string) {
 
   if (!updatedPlayers) return
 
-  const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null)
+  // Alle Spieler die eine Platzierung haben
+  const playersWithPlacement = updatedPlayers.filter(p => p.placement !== null)
 
-  // KRITISCH: Setze Room auf "finished" NUR wenn ALLE Spieler eine Platzierung haben
-  // NICHT wenn nur noch 1 übrig ist!
-  if (playersWithoutPlacement.length === 0) {
+  // KRITISCH: Spiel ist NUR vorbei wenn:
+  // - Alle Spieler eine Platzierung haben (jeder wurde platziert)
+  // - ODER nur noch 1 Spieler übrig ist UND der hat 0 Karten
+  
+  // Check: Sind alle Spieler platziert?
+  if (playersWithPlacement.length === updatedPlayers.length) {
     await supabase
       .from('game_rooms')
       .update({ status: 'finished' })
       .eq('id', roomId)
-  } 
-  // Wenn nur noch 1 Spieler ohne Platzierung → Gib ihm die letzte Platzierung
-  else if (playersWithoutPlacement.length === 1) {
-    const lastPlace = updatedPlayers.length
+  }
+  // Check: Ist nur noch 1 Spieler ohne Platzierung UND hat der 0 Karten?
+  else {
+    const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null)
     
-    await supabase
-      .from('players')
-      .update({ 
-        placement: lastPlace,
-        is_active: false 
-      })
-      .eq('id', playersWithoutPlacement[0].id)
-    
-    // JETZT setze Room auf finished (nachdem ALLE Platzierung haben)
-    await supabase
-      .from('game_rooms')
-      .update({ status: 'finished' })
-      .eq('id', roomId)
+    if (playersWithoutPlacement.length === 1 && 
+        (playersWithoutPlacement[0].cards?.length || 0) === 0) {
+      // Gib dem letzten Spieler die letzte Platzierung
+      const lastPlace = updatedPlayers.length
+      
+      await supabase
+        .from('players')
+        .update({ 
+          placement: lastPlace,
+          is_active: false 
+        })
+        .eq('id', playersWithoutPlacement[0].id)
+      
+      // JETZT room auf finished
+      await supabase
+        .from('game_rooms')
+        .update({ status: 'finished' })
+        .eq('id', roomId)
+    }
   }
 }
 
