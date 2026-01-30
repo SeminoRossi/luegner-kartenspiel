@@ -15,6 +15,12 @@ interface GameBoardProps {
 
 const RANKS: Rank[] = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 
+const PLACEMENT_MEDALS: { [key: number]: string } = {
+  1: '🥇',
+  2: '🥈', 
+  3: '🥉'
+}
+
 export default function GameBoard({ roomCode, initialPlayers, initialRoom }: GameBoardProps) {
   const [players, setPlayers] = useState<Player[]>(initialPlayers)
   const [room, setRoom] = useState<GameRoom>(initialRoom)
@@ -28,6 +34,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const [isShuffling, setIsShuffling] = useState(false)
 
   const myPlayer = players.find(p => p.id === myPlayerId)
+  const rankedPlayers = [...players]
+    .filter(p => p.placement !== null)
+    .sort((a, b) => (a.placement || 0) - (b.placement || 0))
 
   useEffect(() => {
     const playerName = localStorage.getItem('player_name')
@@ -59,10 +68,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             .select('*')
             .eq('id', initialRoom.id)
             .single()
-          if (data) {
-            console.log('Room update:', data)
-            setRoom(data)
-          }
+          if (data) setRoom(data)
         }
       )
       .subscribe()
@@ -77,10 +83,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             .select('*')
             .eq('room_id', initialRoom.id)
             .single()
-          if (data) {
-            console.log('Game state update:', data)
-            setGameState(data)
-          }
+          if (data) setGameState(data)
         }
       )
       .subscribe()
@@ -101,10 +104,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .eq('room_id', initialRoom.id)
       .single()
     
-    if (data) {
-      console.log('Loaded game state:', data)
-      setGameState(data)
-    }
+    if (data) setGameState(data)
   }
 
   async function handleStartGame() {
@@ -112,21 +112,15 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     setIsShuffling(true)
     
     try {
-      console.log('Starting game for room:', initialRoom.id)
-      const result = await startGame(initialRoom.id)
-      console.log('Game started:', result)
+      await startGame(initialRoom.id)
       
-      // Force reload room status
       const { data: updatedRoom } = await supabase
         .from('game_rooms')
         .select('*')
         .eq('id', initialRoom.id)
         .single()
       
-      if (updatedRoom) {
-        console.log('Updated room:', updatedRoom)
-        setRoom(updatedRoom)
-      }
+      if (updatedRoom) setRoom(updatedRoom)
       
       await loadGameState()
       
@@ -134,7 +128,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         setIsShuffling(false)
       }, 2000)
     } catch (err: any) {
-      console.error('Start game error:', err)
       alert(err.message)
       setIsShuffling(false)
     } finally {
@@ -209,8 +202,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
   const canCallLiar = isMyTurn && (gameState?.pile_cards?.length || 0) > 0
 
-  console.log('Render state:', { roomStatus: room.status, gameState, isMyTurn, myPlayerId })
-
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
       <div className="card">
@@ -236,6 +227,62 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
           <div className="card__body text-center">
             <div className="text-4xl md:text-6xl mb-4 animate-bounce">🎴</div>
             <h2 className="text-xl md:text-2xl font-bold">Karten werden gemischt...</h2>
+          </div>
+        </div>
+      )}
+
+      {room.status === 'finished' && rankedPlayers.length > 0 && (
+        <div className="card bg-gradient-to-br from-purple-600 via-blue-600 to-teal-500 border-4 border-yellow-300 shadow-2xl">
+          <div className="card__body text-center py-8">
+            <div className="text-5xl md:text-7xl mb-6 animate-bounce">🏁</div>
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-8">Endstand</h2>
+            
+            <div className="space-y-4">
+              {rankedPlayers.map(player => {
+                const isMe = player.id === myPlayerId
+                const placement = player.placement || 0
+                const isWinner = placement === 1
+                const isLoser = placement === players.length
+                const medal = PLACEMENT_MEDALS[placement] || `${placement}.`
+                
+                return (
+                  <div 
+                    key={player.id} 
+                    className={`p-4 rounded-xl ${
+                      isWinner ? 'bg-gradient-to-r from-yellow-400 to-yellow-600 animate-pulse' :
+                      isLoser ? 'bg-gradient-to-r from-gray-600 to-gray-800' :
+                      'bg-white/20'
+                    } ${isMe ? 'border-4 border-white' : 'border-2 border-white/50'}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <span className="text-4xl md:text-5xl">{medal}</span>
+                        <div className="text-left">
+                          <div className="text-xl md:text-2xl font-bold text-white">
+                            {player.player_name} {isMe && '(Du)'}
+                          </div>
+                          {isWinner && (
+                            <div className="text-sm md:text-base text-yellow-200 font-semibold">
+                              🏆 Gewinner!
+                            </div>
+                          )}
+                          {isLoser && (
+                            <div className="text-sm md:text-base text-gray-300">
+                              Verlierer
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg md:text-xl font-bold text-white">
+                          Platz {placement}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}
