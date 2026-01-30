@@ -41,8 +41,33 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const readyForRematchCount = players.filter(p => p.ready_for_rematch === true).length
   const allPlayersReady = readyForRematchCount === players.length && players.length > 0
 
-  // WICHTIG: Check ob ich eine Platzierung habe = Spiel ist für mich vorbei
   const myPlacementSet = myPlayer?.placement !== null && myPlayer?.placement !== undefined
+
+  async function reloadAllData() {
+    const { data: updatedPlayers } = await supabase
+      .from('players')
+      .select('*')
+      .eq('room_id', initialRoom.id)
+      .order('player_order')
+    
+    if (updatedPlayers) setPlayers(updatedPlayers)
+
+    const { data: updatedRoom } = await supabase
+      .from('game_rooms')
+      .select('*')
+      .eq('id', initialRoom.id)
+      .single()
+    
+    if (updatedRoom) setRoom(updatedRoom)
+
+    const { data: updatedState } = await supabase
+      .from('game_state')
+      .select('*')
+      .eq('room_id', initialRoom.id)
+      .maybeSingle()
+    
+    if (updatedState) setGameState(updatedState)
+  }
 
   useEffect(() => {
     const playerName = localStorage.getItem('player_name')
@@ -50,68 +75,46 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     if (player) setMyPlayerId(player.id)
 
     const playersChannel = supabase
-      .channel('players-channel')
+      .channel('players-realtime-channel')
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${initialRoom.id}` },
-        async () => {
-          const { data } = await supabase
-            .from('players')
-            .select('*')
-            .eq('room_id', initialRoom.id)
-            .order('player_order')
-          if (data) setPlayers(data)
+        async (payload) => {
+          console.log('Players changed:', payload)
+          await reloadAllData()
         }
       )
       .subscribe()
 
     const roomChannel = supabase
-      .channel('room-channel')
+      .channel('room-realtime-channel')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'game_rooms', filter: `id=eq.${initialRoom.id}` },
-        async () => {
-          const { data } = await supabase
-            .from('game_rooms')
-            .select('*')
-            .eq('id', initialRoom.id)
-            .single()
-          if (data) setRoom(data)
+        async (payload) => {
+          console.log('Room changed:', payload)
+          await reloadAllData()
         }
       )
       .subscribe()
 
     const stateChannel = supabase
-      .channel('state-channel')
+      .channel('state-realtime-channel')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'game_state', filter: `room_id=eq.${initialRoom.id}` },
-        async () => {
-          const { data } = await supabase
-            .from('game_state')
-            .select('*')
-            .eq('room_id', initialRoom.id)
-            .single()
-          if (data) setGameState(data)
+        async (payload) => {
+          console.log('State changed:', payload)
+          await reloadAllData()
         }
       )
       .subscribe()
 
-    loadGameState()
+    reloadAllData()
 
     return () => {
       playersChannel.unsubscribe()
       roomChannel.unsubscribe()
       stateChannel.unsubscribe()
     }
-  }, [initialRoom.id, players])
-
-  async function loadGameState() {
-    const { data } = await supabase
-      .from('game_state')
-      .select('*')
-      .eq('room_id', initialRoom.id)
-      .maybeSingle()
-    
-    if (data) setGameState(data)
-  }
+  }, [initialRoom.id])
 
   async function handleStartGame() {
     setLoading(true)
@@ -121,24 +124,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       await startGame(initialRoom.id)
       
       await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      const { data: updatedRoom } = await supabase
-        .from('game_rooms')
-        .select('*')
-        .eq('id', initialRoom.id)
-        .single()
-      
-      if (updatedRoom) setRoom(updatedRoom)
-      
-      const { data: updatedPlayers } = await supabase
-        .from('players')
-        .select('*')
-        .eq('room_id', initialRoom.id)
-        .order('player_order')
-      
-      if (updatedPlayers) setPlayers(updatedPlayers)
-      
-      await loadGameState()
+      await reloadAllData()
       
       setTimeout(() => {
         setIsShuffling(false)
@@ -162,26 +148,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       await requestRematch(initialRoom.id, myPlayer.id)
       
       await new Promise(resolve => setTimeout(resolve, 1000))
+      await reloadAllData()
       
-      const { data: updatedRoom } = await supabase
-        .from('game_rooms')
-        .select('*')
-        .eq('id', initialRoom.id)
-        .single()
-      
-      if (updatedRoom) setRoom(updatedRoom)
-      
-      const { data: updatedPlayers } = await supabase
-        .from('players')
-        .select('*')
-        .eq('room_id', initialRoom.id)
-        .order('player_order')
-      
-      if (updatedPlayers) setPlayers(updatedPlayers)
-      
-      await loadGameState()
-      
-      if (updatedRoom?.status === 'playing') {
+      if (room?.status === 'playing') {
         setTimeout(() => {
           setIsShuffling(false)
         }, 1500)
@@ -227,6 +196,10 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       )
       
       setSelectedCards([])
+      
+      setTimeout(async () => {
+        await reloadAllData()
+      }, 500)
     } catch (err: any) {
       console.error('Fehler beim Karten legen:', err)
       alert(err.message)
@@ -254,6 +227,10 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         setRevealedCards(null)
         setRevealMessage('')
       }, 5000)
+      
+      setTimeout(async () => {
+        await reloadAllData()
+      }, 500)
     } catch (err: any) {
       console.error('Fehler beim Lügner rufen:', err)
       alert(err.message)
@@ -267,7 +244,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const canCallLiar = isMyTurn && (gameState?.pile_cards?.length || 0) > 0
   const myPlayerReady = myPlayer?.ready_for_rematch === true
 
-  // Debug Info
   console.log('GameBoard State:', {
     roomStatus: room.status,
     myPlayerId,
@@ -278,7 +254,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     rankedPlayersCount: rankedPlayers.length
   })
 
-  // WICHTIG: Zeige End-Screen wenn room.status = finished ODER wenn ich eine Platzierung habe
+  // WICHTIG: Endscreen NUR wenn:
+  // 1. Room Status = finished (Spiel offiziell vorbei) ODER
+  // 2. ICH habe eine Platzierung (ich bin raus)
   const showEndScreen = room.status === 'finished' || myPlacementSet
 
   return (
@@ -310,6 +288,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         </div>
       )}
 
+      {/* ENDSCREEN: Nur wenn ICH fertig bin ODER Spiel offiziell finished */}
       {showEndScreen && rankedPlayers.length > 0 && (
         <div className="card bg-gradient-to-br from-purple-600 via-blue-600 to-teal-500 border-4 border-yellow-300 shadow-2xl">
           <div className="card__body text-center py-8">
@@ -363,7 +342,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               })}
             </div>
 
-            {/* Warte auf andere Spieler die noch nicht fertig sind */}
             {rankedPlayers.length < players.length && (
               <div className="mb-6 p-4 bg-white/10 rounded-xl">
                 <p className="text-white text-lg">
@@ -375,7 +353,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               </div>
             )}
 
-            {/* Rematch Button nur wenn ALLE fertig sind */}
             {rankedPlayers.length === players.length && (
               <div className="mt-8 p-6 bg-white/10 rounded-xl">
                 <p className="text-white text-lg mb-4">
@@ -426,7 +403,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         </div>
       )}
 
-      {room.status === 'playing' && !myPlacementSet && gameState && myPlayer && myPlayer.cards && myPlayer.cards.length > 0 && (
+      {/* SPIEL-SCREEN: Nur wenn room = playing UND ich keine Platzierung habe UND ich Karten habe */}
+      {room.status === 'playing' && !myPlacementSet && gameState && myPlayer && (
         <>
           <div className="card">
             <div className="card__body text-center">
@@ -468,12 +446,14 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             </div>
           )}
 
-          <PlayerHand
-            cards={myPlayer.cards || []}
-            selectedCards={selectedCards}
-            onSelectCard={handleSelectCard}
-            disabled={!isMyTurn || loading}
-          />
+          {myPlayer.cards && myPlayer.cards.length > 0 && (
+            <PlayerHand
+              cards={myPlayer.cards}
+              selectedCards={selectedCards}
+              onSelectCard={handleSelectCard}
+              disabled={!isMyTurn || loading}
+            />
+          )}
 
           {isMyTurn && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
@@ -495,7 +475,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                   </button>
                 )}
                 
-                {!gameState.last_claim_rank && (
+                {!gameState.last_claim_rank && myPlayer.cards && myPlayer.cards.length > 0 && (
                   <div className="form-group">
                     <label className="form-label text-base md:text-lg">Wähle deine Ansage:</label>
                     <select
@@ -510,13 +490,15 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                   </div>
                 )}
 
-                <button
-                  onClick={handlePlayCards}
-                  disabled={selectedCards.length === 0 || loading}
-                  className="btn btn--primary btn--full-width text-lg md:text-xl py-3 md:py-4"
-                >
-                  {loading ? 'Lege...' : `🃏 ${selectedCards.length} Karte(n) ablegen`}
-                </button>
+                {myPlayer.cards && myPlayer.cards.length > 0 && (
+                  <button
+                    onClick={handlePlayCards}
+                    disabled={selectedCards.length === 0 || loading}
+                    className="btn btn--primary btn--full-width text-lg md:text-xl py-3 md:py-4"
+                  >
+                    {loading ? 'Lege...' : `🃏 ${selectedCards.length} Karte(n) ablegen`}
+                  </button>
+                )}
               </div>
             </div>
           )}
