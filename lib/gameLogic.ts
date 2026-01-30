@@ -85,6 +85,7 @@ export async function startGame(roomId: string) {
   const hands = dealCards(players.length)
   const startPlayerIndex = findClubSeven(hands)
 
+  // WICHTIG: Erst alle Spieler-Stati zurücksetzen
   for (let i = 0; i < players.length; i++) {
     await supabase
       .from('players')
@@ -135,10 +136,16 @@ async function checkGameEnd(roomId: string) {
 
   if (!allPlayers) return
 
-  const playersWithNoCards = allPlayers.filter(p => 
-    (p.cards?.length || 0) === 0 && p.placement === null
+  // WICHTIG: Nur Spieler mit mindestens 1 Karte am Anfang berücksichtigen
+  // (verhindert dass Spieler die gerade erst joinen als "fertig" gezählt werden)
+  const playersInGame = allPlayers.filter(p => p.is_active || p.placement !== null)
+
+  // Spieler die gerade 0 Karten haben und noch keine Platzierung
+  const playersWithNoCards = playersInGame.filter(p => 
+    (p.cards?.length || 0) === 0 && p.placement === null && p.is_active
   )
 
+  // Vergebe Platzierungen
   for (const player of playersWithNoCards) {
     const placedPlayers = allPlayers.filter(p => p.placement !== null)
     const nextPlacement = placedPlayers.length + 1
@@ -152,6 +159,7 @@ async function checkGameEnd(roomId: string) {
       .eq('id', player.id)
   }
 
+  // Nach dem Update: Check ob nur noch 1 Spieler ohne Platzierung übrig ist
   const { data: updatedPlayers } = await supabase
     .from('players')
     .select('*')
@@ -159,8 +167,9 @@ async function checkGameEnd(roomId: string) {
 
   if (!updatedPlayers) return
 
-  const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null)
+  const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null && p.is_active)
 
+  // Wenn nur noch 1 Spieler ohne Platzierung → Das ist der Verlierer
   if (playersWithoutPlacement.length === 1) {
     const lastPlace = updatedPlayers.length
     
@@ -258,6 +267,7 @@ export async function playCards(
       }
     })
 
+  // Check Game End
   await checkGameEnd(roomId)
 }
 
@@ -355,6 +365,7 @@ export async function callLiar(roomId: string, callerId: string) {
       }
     })
 
+  // Check Game End
   await checkGameEnd(roomId)
 
   return { wasLying, revealedCards: lastCards, loser, winner }
