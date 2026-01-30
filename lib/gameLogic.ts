@@ -124,7 +124,6 @@ export async function startGame(roomId: string) {
   return { startPlayerId: players[startPlayerIndex].id }
 }
 
-// KRITISCHER FIX: Nur Spieler mit 0 Karten bekommen Platzierung!
 async function assignPlacements(roomId: string) {
   const { data: allPlayers } = await supabase
     .from('players')
@@ -134,12 +133,10 @@ async function assignPlacements(roomId: string) {
 
   if (!allPlayers) return
 
-  // NUR Spieler die 0 Karten haben und noch keine Platzierung
   const playersWithNoCardsNeedingPlacement = allPlayers.filter(p => 
     (p.cards?.length || 0) === 0 && p.placement === null
   )
 
-  // Vergebe Platzierungen für Spieler mit 0 Karten
   for (const player of playersWithNoCardsNeedingPlacement) {
     const placedPlayers = allPlayers.filter(p => p.placement !== null)
     const nextPlacement = placedPlayers.length + 1
@@ -153,7 +150,6 @@ async function assignPlacements(roomId: string) {
       .eq('id', player.id)
   }
 
-  // WICHTIG: Reload players nach updates
   const { data: updatedPlayers } = await supabase
     .from('players')
     .select('*')
@@ -161,27 +157,18 @@ async function assignPlacements(roomId: string) {
 
   if (!updatedPlayers) return
 
-  // Alle Spieler die eine Platzierung haben
   const playersWithPlacement = updatedPlayers.filter(p => p.placement !== null)
 
-  // KRITISCH: Spiel ist NUR vorbei wenn:
-  // - Alle Spieler eine Platzierung haben (jeder wurde platziert)
-  // - ODER nur noch 1 Spieler übrig ist UND der hat 0 Karten
-  
-  // Check: Sind alle Spieler platziert?
   if (playersWithPlacement.length === updatedPlayers.length) {
     await supabase
       .from('game_rooms')
       .update({ status: 'finished' })
       .eq('id', roomId)
-  }
-  // Check: Ist nur noch 1 Spieler ohne Platzierung UND hat der 0 Karten?
-  else {
+  } else {
     const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null)
     
     if (playersWithoutPlacement.length === 1 && 
         (playersWithoutPlacement[0].cards?.length || 0) === 0) {
-      // Gib dem letzten Spieler die letzte Platzierung
       const lastPlace = updatedPlayers.length
       
       await supabase
@@ -192,7 +179,6 @@ async function assignPlacements(roomId: string) {
         })
         .eq('id', playersWithoutPlacement[0].id)
       
-      // JETZT room auf finished
       await supabase
         .from('game_rooms')
         .update({ status: 'finished' })
@@ -256,14 +242,20 @@ export async function playCards(
   const currentIndex = allPlayers?.findIndex(p => p.id === playerId) || 0
   const nextPlayer = allPlayers?.[((currentIndex + 1) % (allPlayers?.length || 1))]
 
+  // WICHTIG: Wenn claimRank UND claimCount übergeben werden, update beide
+  // Sonst behalte die alten Werte (für Runden nach der ersten)
+  const newClaimRank = claimRank || gameState.last_claim_rank
+  const newClaimCount = claimCount !== undefined ? claimCount : cards.length  // IMMER die Anzahl der gelegten Karten!
+  const newClaimText = `${newClaimCount}x ${newClaimRank}`
+
   await supabase
     .from('game_state')
     .update({
       pile_cards: newPile,
       current_player_id: nextPlayer?.id,
-      last_claim: claimRank ? `${claimCount}x ${claimRank}` : gameState.last_claim,
-      last_claim_rank: claimRank || gameState.last_claim_rank,
-      last_claim_count: claimCount || gameState.last_claim_count,
+      last_claim: newClaimText,
+      last_claim_rank: newClaimRank,
+      last_claim_count: newClaimCount,
       removed_quads: removedQuads
     })
     .eq('room_id', roomId)
@@ -276,11 +268,10 @@ export async function playCards(
       action_type: 'play_card',
       action_data: {
         cards_count: cards.length,
-        claim: claimRank ? `${claimCount}x ${claimRank}` : null
+        claim: newClaimText
       }
     })
 
-  // Vergebe Platzierungen nach diesem Zug
   await assignPlacements(roomId)
 }
 
@@ -378,7 +369,6 @@ export async function callLiar(roomId: string, callerId: string) {
       }
     })
 
-  // Vergebe Platzierungen NACH dem Lügner-Call
   await assignPlacements(roomId)
 
   return { wasLying, revealedCards: lastCards, loser, winner }

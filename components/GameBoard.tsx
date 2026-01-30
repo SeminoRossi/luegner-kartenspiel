@@ -243,6 +243,13 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const shouldShowEndScreen = room.status === 'finished' || myPlacementSet
 
+  // Bestimme welcher Suit für die Ansage-Karte angezeigt wird
+  const getClaimSuit = (rank: string) => {
+    // Karo für rote Karten (7, 9, J, K), Pik für schwarze (8, 10, Q, A)
+    const redRanks = ['7', '9', 'J', 'K']
+    return redRanks.includes(rank) ? '♦' : '♠'
+  }
+
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
       <div className="card">
@@ -392,10 +399,33 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             <div className="card__body text-center">
               {gameState.last_claim_rank ? (
                 <>
-                  <p className="text-xs md:text-sm text-color-text-secondary mb-2">Aktuelle Ansage:</p>
-                  <h2 className="text-4xl md:text-5xl font-bold text-color-primary mb-2">
-                    {gameState.last_claim_count}x {gameState.last_claim_rank}
-                  </h2>
+                  <p className="text-xs md:text-sm text-color-text-secondary mb-3">Aktuelle Ansage:</p>
+                  
+                  {/* Karten-Design für Ansage */}
+                  <div className="flex justify-center items-center mb-4">
+                    <div className="relative">
+                      {/* Die Karte */}
+                      <div 
+                        style={{ width: '140px', height: '210px' }}
+                        className="md:w-[180px] md:h-[270px] rounded-2xl border-4 border-color-primary bg-gradient-to-br from-white to-gray-100 dark:from-gray-800 dark:to-gray-900 flex flex-col items-center justify-center shadow-2xl"
+                      >
+                        <span className={`text-7xl md:text-8xl mb-2 ${['♥', '♦'].includes(getClaimSuit(gameState.last_claim_rank)) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {getClaimSuit(gameState.last_claim_rank)}
+                        </span>
+                        <span className={`text-5xl md:text-6xl font-bold ${['♥', '♦'].includes(getClaimSuit(gameState.last_claim_rank)) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {gameState.last_claim_rank}
+                        </span>
+                      </div>
+                      
+                      {/* Count Badge */}
+                      <div className="absolute -top-3 -right-3 md:-top-4 md:-right-4 w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full border-4 border-white dark:border-gray-800 flex items-center justify-center shadow-xl animate-pulse">
+                        <span className="text-2xl md:text-3xl font-bold text-white">
+                          {gameState.last_claim_count}×
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
                   <p className="text-xs md:text-sm text-color-text-secondary mt-2">
                     📚 Stapel: {gameState.pile_cards?.length || 0} Karten
                   </p>
