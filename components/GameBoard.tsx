@@ -250,10 +250,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const removedQuads = gameState?.removed_quads || []
   
-  // Verfügbare Ränge: Alle außer die auf dem Friedhof
   const availableRanks = RANKS.filter(rank => !removedQuads.includes(rank))
   
-  // Wenn der aktuell ausgewählte Rang auf dem Friedhof ist, wechsle zum ersten verfügbaren
   useEffect(() => {
     if (removedQuads.includes(claimRank) && availableRanks.length > 0) {
       setClaimRank(availableRanks[0])
@@ -505,23 +503,23 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
           {isMyTurn && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
-              <div className="card__body space-y-4">
+              <div className="card__body space-y-5">
                 <div className="text-center">
                   <span className="inline-block px-5 py-3 bg-color-primary text-color-btn-primary-text rounded-full font-bold text-lg md:text-xl">
                     ⭐ Du bist am Zug!
                   </span>
                 </div>
 
-                {/* Buttons IMMER nebeneinander - forced mit flex */}
-                <div className="flex gap-3">
+                {/* Buttons zentriert, begrenzte Breite, SEHR HOCH */}
+                <div className="flex justify-center gap-4">
                   {canCallLiar && (
                     <button
                       onClick={handleCallLiar}
                       disabled={loading}
-                      className="flex-1 rounded-xl text-white font-bold text-lg md:text-2xl py-6 md:py-8 transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-40 md:w-48 rounded-2xl text-white font-bold text-xl md:text-2xl py-8 md:py-10 transition-all duration-200 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ backgroundColor: '#ef4444' }}
                     >
-                      {loading ? 'Prüfe...' : '🚨 LÜGNER!'}
+                      {loading ? '⏳' : '🚨 LÜGNER!'}
                     </button>
                   )}
                   
@@ -529,23 +527,22 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                     <button
                       onClick={handlePlayCards}
                       disabled={selectedCards.length === 0 || loading}
-                      className="flex-1 rounded-xl bg-color-primary text-color-btn-primary-text font-bold text-lg md:text-2xl py-6 md:py-8 transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-40 md:w-48 rounded-2xl bg-color-primary text-color-btn-primary-text font-bold text-xl md:text-2xl py-8 md:py-10 transition-all duration-200 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {loading ? 'Lege...' : `🃏 ${selectedCards.length || '0'} Karte(n)`}
+                      {loading ? '⏳' : `🃏 ${selectedCards.length || '0'}`}
                     </button>
                   )}
                 </div>
                 
-                {/* Ansage-Auswahl - NUR verfügbare Ränge */}
                 {!gameState.last_claim_rank && myPlayer.cards && myPlayer.cards.length > 0 && availableRanks.length > 0 && (
-                  <div className="form-group mt-4">
-                    <label className="form-label text-lg md:text-xl mb-3 font-semibold">
+                  <div className="form-group mt-5">
+                    <label className="form-label text-lg md:text-xl mb-3 font-semibold text-center block">
                       Wähle deine Ansage:
                     </label>
                     <select
                       value={claimRank}
                       onChange={(e) => setClaimRank(e.target.value as Rank)}
-                      className="form-control text-xl md:text-2xl py-4 font-bold"
+                      className="form-control text-xl md:text-2xl py-4 font-bold text-center"
                     >
                       {availableRanks.map(rank => (
                         <option key={rank} value={rank}>{rank}</option>
