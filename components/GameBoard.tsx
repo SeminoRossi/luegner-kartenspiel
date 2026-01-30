@@ -458,7 +458,25 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               />
             )}
 
-            {/* Action Buttons */}
+            {/* LÜGNER Button - für Spieler die NICHT am Zug sind */}
+            {!isMyTurn && canCallLiar && (
+              <div className="card bg-gradient-to-br from-color-bg-4 to-color-bg-1 border-4 border-red-500 shadow-2xl">
+                <div className="card__body">
+                  <div className="flex justify-center">
+                    <button
+                      onClick={handleCallLiar}
+                      disabled={loading}
+                      className="w-full max-w-md rounded-3xl text-white font-extrabold text-2xl md:text-3xl py-12 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-red-500 to-red-600"
+                    >
+                      <span className="text-5xl">🚨</span>
+                      <span>{loading ? 'Prüfe...' : 'LÜGNER!'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons - für Spieler der AM ZUG ist */}
             {isMyTurn && (
               <div className="card bg-gradient-to-br from-color-bg-1 to-color-bg-3 border-4 border-color-primary shadow-2xl">
                 <div className="card__body space-y-6">
@@ -468,27 +486,16 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                     </span>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex flex-col sm:flex-row justify-center gap-6">
-                    {canCallLiar && (
-                      <button
-                        onClick={handleCallLiar}
-                        disabled={loading}
-                        className="flex-1 max-w-xs rounded-3xl text-white font-extrabold text-2xl md:text-3xl py-12 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-red-500 to-red-600"
-                      >
-                        <span className="text-5xl">🚨</span>
-                        <span>{loading ? 'Prüfe...' : 'LÜGNER!'}</span>
-                      </button>
-                    )}
-                    
+                  {/* ABLEGEN Button */}
+                  <div className="flex justify-center">
                     {myPlayer.cards && myPlayer.cards.length > 0 && (
                       <button
                         onClick={handlePlayCards}
                         disabled={selectedCards.length === 0 || loading}
-                        className="flex-1 max-w-xs rounded-3xl bg-gradient-to-br from-color-primary to-color-primary-hover text-white font-extrabold text-2xl md:text-3xl py-12 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-3"
+                        className="w-full max-w-md rounded-3xl bg-gradient-to-br from-color-primary to-color-primary-hover text-white font-extrabold text-2xl md:text-3xl py-12 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-3"
                       >
                         <span className="text-5xl">🃏</span>
-                        <span>{loading ? 'Lege...' : `${selectedCards.length || '0'} ABLEGEN`}</span>
+                        <span>{loading ? 'Lege...' : `${selectedCards.length} ABLEGEN`}</span>
                       </button>
                     )}
                   </div>
