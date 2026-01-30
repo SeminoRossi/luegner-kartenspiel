@@ -124,7 +124,7 @@ export async function startGame(roomId: string) {
   return { startPlayerId: players[startPlayerIndex].id }
 }
 
-// Vergebe Platzierungen für Spieler mit 0 Karten
+// Vergebe Platzierungen und check ob Spiel vorbei ist
 async function assignPlacements(roomId: string) {
   const { data: allPlayers } = await supabase
     .from('players')
@@ -139,7 +139,7 @@ async function assignPlacements(roomId: string) {
     (p.cards?.length || 0) === 0 && p.placement === null
   )
 
-  // Vergebe Platzierungen
+  // Vergebe Platzierungen für Spieler mit 0 Karten
   for (const player of playersWithNoCards) {
     const placedPlayers = allPlayers.filter(p => p.placement !== null)
     const nextPlacement = placedPlayers.length + 1
@@ -153,7 +153,7 @@ async function assignPlacements(roomId: string) {
       .eq('id', player.id)
   }
 
-  // Check ob nur noch 1 Spieler ohne Platzierung übrig ist
+  // WICHTIG: Reload players nach updates
   const { data: updatedPlayers } = await supabase
     .from('players')
     .select('*')
@@ -163,8 +163,16 @@ async function assignPlacements(roomId: string) {
 
   const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null)
 
-  // Wenn nur noch 1 Spieler ohne Platzierung → Das ist der Verlierer
-  if (playersWithoutPlacement.length === 1) {
+  // KRITISCH: Setze Room auf "finished" NUR wenn ALLE Spieler eine Platzierung haben
+  // NICHT wenn nur noch 1 übrig ist!
+  if (playersWithoutPlacement.length === 0) {
+    await supabase
+      .from('game_rooms')
+      .update({ status: 'finished' })
+      .eq('id', roomId)
+  } 
+  // Wenn nur noch 1 Spieler ohne Platzierung → Gib ihm die letzte Platzierung
+  else if (playersWithoutPlacement.length === 1) {
     const lastPlace = updatedPlayers.length
     
     await supabase
@@ -174,7 +182,8 @@ async function assignPlacements(roomId: string) {
         is_active: false 
       })
       .eq('id', playersWithoutPlacement[0].id)
-
+    
+    // JETZT setze Room auf finished (nachdem ALLE Platzierung haben)
     await supabase
       .from('game_rooms')
       .update({ status: 'finished' })
@@ -261,8 +270,7 @@ export async function playCards(
       }
     })
 
-  // WICHTIG: Vergebe Platzierungen NACH diesem Zug
-  // Spieler mit 0 Karten die jetzt ihren Zug hatten bekommen Platzierung
+  // Vergebe Platzierungen nach diesem Zug
   await assignPlacements(roomId)
 }
 
@@ -360,7 +368,7 @@ export async function callLiar(roomId: string, callerId: string) {
       }
     })
 
-  // WICHTIG: Vergebe Platzierungen NACH dem Lügner-Call
+  // Vergebe Platzierungen NACH dem Lügner-Call
   await assignPlacements(roomId)
 
   return { wasLying, revealedCards: lastCards, loser, winner }
