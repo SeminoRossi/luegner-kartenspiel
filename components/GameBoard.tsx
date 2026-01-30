@@ -41,6 +41,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const readyForRematchCount = players.filter(p => p.ready_for_rematch === true).length
   const allPlayersReady = readyForRematchCount === players.length && players.length > 0
 
+  // WICHTIG: Check ob ich eine Platzierung habe = Spiel ist für mich vorbei
+  const myPlacementSet = myPlayer?.placement !== null && myPlayer?.placement !== undefined
+
   useEffect(() => {
     const playerName = localStorage.getItem('player_name')
     const player = players.find(p => p.player_name === playerName)
@@ -105,7 +108,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .from('game_state')
       .select('*')
       .eq('room_id', initialRoom.id)
-      .single()
+      .maybeSingle()
     
     if (data) setGameState(data)
   }
@@ -117,6 +120,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     try {
       await startGame(initialRoom.id)
       
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
       const { data: updatedRoom } = await supabase
         .from('game_rooms')
         .select('*')
@@ -125,12 +130,21 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       
       if (updatedRoom) setRoom(updatedRoom)
       
+      const { data: updatedPlayers } = await supabase
+        .from('players')
+        .select('*')
+        .eq('room_id', initialRoom.id)
+        .order('player_order')
+      
+      if (updatedPlayers) setPlayers(updatedPlayers)
+      
       await loadGameState()
       
       setTimeout(() => {
         setIsShuffling(false)
-      }, 2000)
+      }, 1500)
     } catch (err: any) {
+      console.error('Fehler beim Spielstart:', err)
       alert(err.message)
       setIsShuffling(false)
     } finally {
@@ -147,26 +161,35 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     try {
       await requestRematch(initialRoom.id, myPlayer.id)
       
-      // Warte kurz und refresh die Daten
-      setTimeout(async () => {
-        const { data: updatedRoom } = await supabase
-          .from('game_rooms')
-          .select('*')
-          .eq('id', initialRoom.id)
-          .single()
-        
-        if (updatedRoom) setRoom(updatedRoom)
-        await loadGameState()
-        
-        if (updatedRoom?.status === 'playing') {
-          setTimeout(() => {
-            setIsShuffling(false)
-          }, 2000)
-        } else {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      const { data: updatedRoom } = await supabase
+        .from('game_rooms')
+        .select('*')
+        .eq('id', initialRoom.id)
+        .single()
+      
+      if (updatedRoom) setRoom(updatedRoom)
+      
+      const { data: updatedPlayers } = await supabase
+        .from('players')
+        .select('*')
+        .eq('room_id', initialRoom.id)
+        .order('player_order')
+      
+      if (updatedPlayers) setPlayers(updatedPlayers)
+      
+      await loadGameState()
+      
+      if (updatedRoom?.status === 'playing') {
+        setTimeout(() => {
           setIsShuffling(false)
-        }
-      }, 500)
+        }, 1500)
+      } else {
+        setIsShuffling(false)
+      }
     } catch (err: any) {
+      console.error('Fehler beim Rematch:', err)
       alert(err.message)
       setIsShuffling(false)
     } finally {
@@ -205,6 +228,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       
       setSelectedCards([])
     } catch (err: any) {
+      console.error('Fehler beim Karten legen:', err)
       alert(err.message)
     } finally {
       setLoading(false)
@@ -231,6 +255,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         setRevealMessage('')
       }, 5000)
     } catch (err: any) {
+      console.error('Fehler beim Lügner rufen:', err)
       alert(err.message)
     } finally {
       setLoading(false)
@@ -241,6 +266,20 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
   const canCallLiar = isMyTurn && (gameState?.pile_cards?.length || 0) > 0
   const myPlayerReady = myPlayer?.ready_for_rematch === true
+
+  // Debug Info
+  console.log('GameBoard State:', {
+    roomStatus: room.status,
+    myPlayerId,
+    myPlayerCards: myPlayer?.cards?.length,
+    myPlayerPlacement: myPlayer?.placement,
+    myPlacementSet,
+    gameStateExists: !!gameState,
+    rankedPlayersCount: rankedPlayers.length
+  })
+
+  // WICHTIG: Zeige End-Screen wenn room.status = finished ODER wenn ich eine Platzierung habe
+  const showEndScreen = room.status === 'finished' || myPlacementSet
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
@@ -254,8 +293,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             <div className="text-right">
               <div className="status status--info text-xs md:text-sm">
                 {room.status === 'waiting' && 'Warte...'}
-                {room.status === 'playing' && 'Läuft'}
-                {room.status === 'finished' && 'Beendet'}
+                {room.status === 'playing' && !myPlacementSet && 'Läuft'}
+                {(room.status === 'finished' || myPlacementSet) && 'Beendet'}
               </div>
             </div>
           </div>
@@ -271,7 +310,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         </div>
       )}
 
-      {room.status === 'finished' && rankedPlayers.length > 0 && (
+      {showEndScreen && rankedPlayers.length > 0 && (
         <div className="card bg-gradient-to-br from-purple-600 via-blue-600 to-teal-500 border-4 border-yellow-300 shadow-2xl">
           <div className="card__body text-center py-8">
             <div className="text-5xl md:text-7xl mb-6 animate-bounce">🏁</div>
@@ -324,30 +363,45 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               })}
             </div>
 
-            <div className="mt-8 p-6 bg-white/10 rounded-xl">
-              <p className="text-white text-lg mb-4">
-                {myPlayerReady 
-                  ? '✅ Du bist bereit!' 
-                  : 'Möchtest du nochmal spielen?'}
-              </p>
-              <p className="text-white/80 text-sm mb-6">
-                {readyForRematchCount} / {players.length} Spieler bereit
-              </p>
-              
-              <button
-                onClick={handleRematch}
-                disabled={loading || myPlayerReady}
-                className={`btn ${myPlayerReady ? 'btn--secondary' : 'btn--primary'} text-lg md:text-xl px-8 py-4`}
-              >
-                {loading ? '⏳ Warte...' : myPlayerReady ? '✅ Bereit!' : '🔄 Nochmal spielen'}
-              </button>
-
-              {allPlayersReady && !loading && (
-                <p className="text-yellow-300 font-bold text-xl mt-4 animate-pulse">
-                  🎉 Alle bereit! Spiel startet...
+            {/* Warte auf andere Spieler die noch nicht fertig sind */}
+            {rankedPlayers.length < players.length && (
+              <div className="mb-6 p-4 bg-white/10 rounded-xl">
+                <p className="text-white text-lg">
+                  ⏳ Warte auf die anderen Spieler...
                 </p>
-              )}
-            </div>
+                <p className="text-white/70 text-sm mt-2">
+                  {rankedPlayers.length} / {players.length} Spieler fertig
+                </p>
+              </div>
+            )}
+
+            {/* Rematch Button nur wenn ALLE fertig sind */}
+            {rankedPlayers.length === players.length && (
+              <div className="mt-8 p-6 bg-white/10 rounded-xl">
+                <p className="text-white text-lg mb-4">
+                  {myPlayerReady 
+                    ? '✅ Du bist bereit!' 
+                    : 'Möchtest du nochmal spielen?'}
+                </p>
+                <p className="text-white/80 text-sm mb-6">
+                  {readyForRematchCount} / {players.length} Spieler bereit
+                </p>
+                
+                <button
+                  onClick={handleRematch}
+                  disabled={loading || myPlayerReady}
+                  className={`btn ${myPlayerReady ? 'btn--secondary' : 'btn--primary'} text-lg md:text-xl px-8 py-4`}
+                >
+                  {loading ? '⏳ Warte...' : myPlayerReady ? '✅ Bereit!' : '🔄 Nochmal spielen'}
+                </button>
+
+                {allPlayersReady && !loading && (
+                  <p className="text-yellow-300 font-bold text-xl mt-4 animate-pulse">
+                    🎉 Alle bereit! Spiel startet...
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -372,7 +426,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         </div>
       )}
 
-      {room.status === 'playing' && gameState && myPlayer && (
+      {room.status === 'playing' && !myPlacementSet && gameState && myPlayer && myPlayer.cards && myPlayer.cards.length > 0 && (
         <>
           <div className="card">
             <div className="card__body text-center">
