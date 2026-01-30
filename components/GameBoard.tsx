@@ -215,7 +215,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       const result = await callLiar(initialRoom.id, myPlayer.id)
       setRevealedCards(result.revealedCards)
       
-      // Build message from result
       const message = result.wasLying 
         ? `🚨 ${result.loser} hat gelogen! Nimmt den Stapel.`
         : `✅ ${result.loser} hatte recht! ${result.winner} nimmt den Stapel.`
@@ -390,7 +389,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                     
                     <div className="flex justify-center items-center mb-6">
                       <div className="relative">
-                        {/* Modern Card Design */}
                         <div 
                           className="w-40 h-60 md:w-48 md:h-72 rounded-3xl border-4 border-color-primary bg-gradient-to-br from-white via-gray-50 to-gray-100 dark:from-gray-800 dark:via-gray-850 dark:to-gray-900 flex flex-col items-center justify-center shadow-2xl transform hover:scale-105 transition-all"
                         >
@@ -402,7 +400,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                           </span>
                         </div>
                         
-                        {/* Count Badge */}
                         <div className="absolute -top-4 -right-4 w-20 h-20 md:w-24 md:h-24 bg-gradient-to-br from-yellow-400 via-orange-400 to-red-500 rounded-full border-4 border-white dark:border-gray-800 flex items-center justify-center shadow-2xl animate-pulse">
                           <span className="text-3xl md:text-4xl font-extrabold text-white drop-shadow-lg">
                             {gameState.last_claim_count}×
@@ -482,15 +479,24 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                       </button>
                     )}
                     
-                    {/* ABLEGEN Button */}
+                    {/* ABLEGEN Button (angepasst: Weiß, Schwarze Schrift) */}
                     {myPlayer.cards && myPlayer.cards.length > 0 && (
                       <button
                         onClick={handlePlayCards}
                         disabled={selectedCards.length === 0 || loading}
-                        className="flex-1 max-w-xs rounded-3xl bg-gradient-to-br from-color-primary to-color-primary-hover text-white font-extrabold text-2xl md:text-3xl py-12 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-3"
+                        className="flex-1 max-w-xs rounded-3xl bg-white text-gray-900 font-extrabold text-2xl md:text-3xl py-12 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-3 border-4 border-gray-100"
                       >
                         <span className="text-5xl">🃏</span>
-                        <span>{loading ? 'Lege...' : `${selectedCards.length} ABLEGEN`}</span>
+                        {loading ? (
+                          <span>Lege...</span>
+                        ) : (
+                          <div className="flex flex-col items-center leading-none">
+                            <span className="text-5xl mb-1">{selectedCards.length}</span>
+                            <span className="text-lg font-bold uppercase tracking-wider">
+                              {selectedCards.length === 1 ? 'Karte' : 'Karten'} ablegen
+                            </span>
+                          </div>
+                        )}
                       </button>
                     )}
                   </div>
