@@ -86,7 +86,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .select('*')
       .eq('room_id', initialRoom.id)
       .order('created_at', { ascending: false })
-      .limit(3)
+      .limit(10)
     
     if (data) setEmojiReactions(data)
   }
