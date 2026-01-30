@@ -158,9 +158,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const shouldShowEndScreen = room.status === 'finished'
   const myPlayerReady = myPlayer?.ready_for_rematch === true
 
-  const graveyard = gameState?.graveyard || {}
-  const graveyardRanks = Object.keys(graveyard).filter(rank => (graveyard[rank as Rank] || 0) > 0) as Rank[]
-  const availableRanks = RANKS.filter(rank => !graveyardRanks.includes(rank))
+  const availableRanks = RANKS
 
   function getClaimSuit(rank: Rank): string {
     const redRanks: Rank[] = ['7', '8', '10', 'K']
