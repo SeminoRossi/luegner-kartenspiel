@@ -85,7 +85,6 @@ export async function startGame(roomId: string) {
   const hands = dealCards(players.length)
   const startPlayerIndex = findClubSeven(hands)
 
-  // WICHTIG: Erst alle Spieler-Stati zurücksetzen
   for (let i = 0; i < players.length; i++) {
     await supabase
       .from('players')
@@ -100,13 +99,11 @@ export async function startGame(roomId: string) {
       .eq('id', players[i].id)
   }
 
-  // Lösche alten game_state
   await supabase
     .from('game_state')
     .delete()
     .eq('room_id', roomId)
 
-  // Erstelle neuen game_state
   await supabase
     .from('game_state')
     .insert({
@@ -127,7 +124,8 @@ export async function startGame(roomId: string) {
   return { startPlayerId: players[startPlayerIndex].id }
 }
 
-async function checkGameEnd(roomId: string) {
+// Vergebe Platzierungen für Spieler mit 0 Karten
+async function assignPlacements(roomId: string) {
   const { data: allPlayers } = await supabase
     .from('players')
     .select('*')
@@ -136,13 +134,9 @@ async function checkGameEnd(roomId: string) {
 
   if (!allPlayers) return
 
-  // WICHTIG: Nur Spieler mit mindestens 1 Karte am Anfang berücksichtigen
-  // (verhindert dass Spieler die gerade erst joinen als "fertig" gezählt werden)
-  const playersInGame = allPlayers.filter(p => p.is_active || p.placement !== null)
-
-  // Spieler die gerade 0 Karten haben und noch keine Platzierung
-  const playersWithNoCards = playersInGame.filter(p => 
-    (p.cards?.length || 0) === 0 && p.placement === null && p.is_active
+  // Spieler die 0 Karten haben und noch keine Platzierung
+  const playersWithNoCards = allPlayers.filter(p => 
+    (p.cards?.length || 0) === 0 && p.placement === null
   )
 
   // Vergebe Platzierungen
@@ -159,7 +153,7 @@ async function checkGameEnd(roomId: string) {
       .eq('id', player.id)
   }
 
-  // Nach dem Update: Check ob nur noch 1 Spieler ohne Platzierung übrig ist
+  // Check ob nur noch 1 Spieler ohne Platzierung übrig ist
   const { data: updatedPlayers } = await supabase
     .from('players')
     .select('*')
@@ -167,7 +161,7 @@ async function checkGameEnd(roomId: string) {
 
   if (!updatedPlayers) return
 
-  const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null && p.is_active)
+  const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null)
 
   // Wenn nur noch 1 Spieler ohne Platzierung → Das ist der Verlierer
   if (playersWithoutPlacement.length === 1) {
@@ -267,8 +261,9 @@ export async function playCards(
       }
     })
 
-  // Check Game End
-  await checkGameEnd(roomId)
+  // WICHTIG: Vergebe Platzierungen NACH diesem Zug
+  // Spieler mit 0 Karten die jetzt ihren Zug hatten bekommen Platzierung
+  await assignPlacements(roomId)
 }
 
 export async function callLiar(roomId: string, callerId: string) {
@@ -365,20 +360,18 @@ export async function callLiar(roomId: string, callerId: string) {
       }
     })
 
-  // Check Game End
-  await checkGameEnd(roomId)
+  // WICHTIG: Vergebe Platzierungen NACH dem Lügner-Call
+  await assignPlacements(roomId)
 
   return { wasLying, revealedCards: lastCards, loser, winner }
 }
 
 export async function requestRematch(roomId: string, playerId: string) {
-  // Markiere Spieler als bereit für Rematch
   await supabase
     .from('players')
     .update({ ready_for_rematch: true })
     .eq('id', playerId)
 
-  // Check ob alle Spieler bereit sind
   const { data: allPlayers } = await supabase
     .from('players')
     .select('*')
@@ -389,7 +382,6 @@ export async function requestRematch(roomId: string, playerId: string) {
   const readyPlayers = allPlayers.filter(p => p.ready_for_rematch === true)
   const allReady = readyPlayers.length === allPlayers.length
 
-  // Wenn alle bereit sind → Starte neues Spiel
   if (allReady) {
     await startGame(roomId)
   }
