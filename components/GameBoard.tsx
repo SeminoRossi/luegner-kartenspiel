@@ -243,13 +243,11 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   const shouldShowEndScreen = room.status === 'finished' || myPlacementSet
 
-  // Bestimme welcher Suit für die Ansage-Karte angezeigt wird
   const getClaimSuit = (rank: string) => {
     const redRanks = ['7', '9', 'J', 'K']
     return redRanks.includes(rank) ? '♦' : '♠'
   }
 
-  // Friedhof: Entfernte 4er
   const removedQuads = gameState?.removed_quads || []
 
   return (
@@ -272,7 +270,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         </div>
       </div>
 
-      {/* Friedhof - Entfernte 4er */}
       {room.status === 'playing' && removedQuads.length > 0 && (
         <div className="card bg-color-bg-4">
           <div className="card__body">
@@ -433,10 +430,8 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                 <>
                   <p className="text-xs md:text-sm text-color-text-secondary mb-3">Aktuelle Ansage:</p>
                   
-                  {/* Karten-Design für Ansage */}
                   <div className="flex justify-center items-center mb-4">
                     <div className="relative">
-                      {/* Die Karte */}
                       <div 
                         style={{ width: '140px', height: '210px' }}
                         className="md:w-[180px] md:h-[270px] rounded-2xl border-4 border-color-primary bg-gradient-to-br from-white to-gray-100 dark:from-gray-800 dark:to-gray-900 flex flex-col items-center justify-center shadow-2xl"
@@ -449,7 +444,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                         </span>
                       </div>
                       
-                      {/* Count Badge */}
                       <div className="absolute -top-3 -right-3 md:-top-4 md:-right-4 w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full border-4 border-white dark:border-gray-800 flex items-center justify-center shadow-xl animate-pulse">
                         <span className="text-2xl md:text-3xl font-bold text-white">
                           {gameState.last_claim_count}×
@@ -501,47 +495,50 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
           {isMyTurn && (
             <div className="card bg-color-bg-1 border-2 border-color-primary">
-              <div className="card__body space-y-3 md:space-y-4">
-                <div className="text-center mb-2 md:mb-4">
-                  <span className="inline-block px-3 md:px-4 py-1 md:py-2 bg-color-primary text-color-btn-primary-text rounded-full font-bold text-sm md:text-base">
+              <div className="card__body space-y-4 md:space-y-5">
+                <div className="text-center">
+                  <span className="inline-block px-4 md:px-5 py-2 md:py-3 bg-color-primary text-color-btn-primary-text rounded-full font-bold text-base md:text-lg">
                     ⭐ Du bist am Zug!
                   </span>
                 </div>
 
-                {canCallLiar && (
-                  <button
-                    onClick={handleCallLiar}
-                    disabled={loading}
-                    className="btn btn--full-width text-lg md:text-xl py-3 md:py-4 mb-3 md:mb-4"
-                    style={{ backgroundColor: '#ef4444', color: 'white', fontWeight: 'bold' }}
-                  >
-                    {loading ? 'Prüfe...' : '🚨 LÜGNER! 🚨'}
-                  </button>
-                )}
+                {/* Buttons nebeneinander mit Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                  {canCallLiar && (
+                    <button
+                      onClick={handleCallLiar}
+                      disabled={loading}
+                      className="btn text-xl md:text-2xl py-5 md:py-6 font-bold"
+                      style={{ backgroundColor: '#ef4444', color: 'white' }}
+                    >
+                      {loading ? 'Prüfe...' : '🚨 LÜGNER!'}
+                    </button>
+                  )}
+                  
+                  {myPlayer.cards && myPlayer.cards.length > 0 && (
+                    <button
+                      onClick={handlePlayCards}
+                      disabled={selectedCards.length === 0 || loading}
+                      className="btn btn--primary text-xl md:text-2xl py-5 md:py-6 font-bold"
+                    >
+                      {loading ? 'Lege...' : `🃏 ${selectedCards.length || '?'} Karte(n)`}
+                    </button>
+                  )}
+                </div>
                 
                 {!gameState.last_claim_rank && myPlayer.cards && myPlayer.cards.length > 0 && (
-                  <div className="form-group">
-                    <label className="form-label text-base md:text-lg">Wähle deine Ansage:</label>
+                  <div className="form-group mt-4">
+                    <label className="form-label text-lg md:text-xl mb-3">Wähle deine Ansage:</label>
                     <select
                       value={claimRank}
                       onChange={(e) => setClaimRank(e.target.value as Rank)}
-                      className="form-control text-lg md:text-xl py-2 md:py-3"
+                      className="form-control text-xl md:text-2xl py-3 md:py-4"
                     >
                       {RANKS.map(rank => (
                         <option key={rank} value={rank}>{rank}</option>
                       ))}
                     </select>
                   </div>
-                )}
-
-                {myPlayer.cards && myPlayer.cards.length > 0 && (
-                  <button
-                    onClick={handlePlayCards}
-                    disabled={selectedCards.length === 0 || loading}
-                    className="btn btn--primary btn--full-width text-lg md:text-xl py-3 md:py-4"
-                  >
-                    {loading ? 'Lege...' : `🃏 ${selectedCards.length} Karte(n) ablegen`}
-                  </button>
                 )}
               </div>
             </div>
