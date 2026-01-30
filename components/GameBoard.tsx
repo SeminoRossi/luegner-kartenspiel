@@ -6,11 +6,20 @@ import { Player, GameState, GameRoom, Card, Rank } from '@/types/game'
 import { startGame, playCards, callLiar, requestRematch } from '@/lib/gameLogic'
 import PlayerList from './PlayerList'
 import PlayerHand from './PlayerHand'
+import EmojiPanel from './EmojiPanel'
+import EmojiDisplay from './EmojiDisplay'
 
 interface GameBoardProps {
   roomCode: string
   initialPlayers: Player[]
   initialRoom: GameRoom
+}
+
+interface EmojiReaction {
+  id: string
+  player_name: string
+  emoji: string
+  created_at: string
 }
 
 const RANKS: Rank[] = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A']
@@ -32,6 +41,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const [revealedCards, setRevealedCards] = useState<Card[] | null>(null)
   const [revealMessage, setRevealMessage] = useState('')
   const [isShuffling, setIsShuffling] = useState(false)
+  const [emojiReactions, setEmojiReactions] = useState<EmojiReaction[]>([])
 
   const myPlayer = players.find(p => p.id === myPlayerId)
   const rankedPlayers = [...players]
@@ -70,6 +80,30 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     if (updatedState) setGameState(updatedState)
   }
 
+  async function loadEmojiReactions() {
+    const { data } = await supabase
+      .from('emoji_reactions')
+      .select('*')
+      .eq('room_id', initialRoom.id)
+      .order('created_at', { ascending: false })
+      .limit(3)
+    
+    if (data) setEmojiReactions(data)
+  }
+
+  async function sendEmoji(emoji: string) {
+    if (!myPlayer) return
+
+    await supabase
+      .from('emoji_reactions')
+      .insert({
+        room_id: initialRoom.id,
+        player_id: myPlayer.id,
+        player_name: myPlayer.player_name,
+        emoji: emoji
+      })
+  }
+
   useEffect(() => {
     const playerName = localStorage.getItem('player_name')
     const player = players.find(p => p.player_name === playerName)
@@ -105,12 +139,37 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       )
       .subscribe()
 
+    // Emoji Reactions Channel
+    const emojiChannel = supabase
+      .channel('emoji-realtime-channel')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'emoji_reactions', filter: `room_id=eq.${initialRoom.id}` },
+        async () => {
+          await loadEmojiReactions()
+        }
+      )
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'emoji_reactions', filter: `room_id=eq.${initialRoom.id}` },
+        async () => {
+          await loadEmojiReactions()
+        }
+      )
+      .subscribe()
+
     reloadAllData()
+    loadEmojiReactions()
+
+    // Auto-cleanup alte Emojis alle 2 Sekunden
+    const cleanupInterval = setInterval(async () => {
+      await supabase.rpc('delete_old_emoji_reactions')
+    }, 2000)
 
     return () => {
       playersChannel.unsubscribe()
       roomChannel.unsubscribe()
       stateChannel.unsubscribe()
+      emojiChannel.unsubscribe()
+      clearInterval(cleanupInterval)
     }
   }, [initialRoom.id])
 
@@ -260,6 +319,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
+      {/* Emoji Display - schwebt über allem */}
+      <EmojiDisplay reactions={emojiReactions} />
+
       <div className="card">
         <div className="card__body">
           <div className="flex justify-between items-center">
@@ -267,7 +329,11 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               <h1 className="text-2xl md:text-3xl font-bold">🎴 Lügner</h1>
               <p className="text-sm md:text-base text-color-text-secondary">Raum: {roomCode}</p>
             </div>
-            <div className="text-right">
+            <div className="flex items-center gap-3">
+              {/* Emoji Button immer sichtbar wenn im Spiel */}
+              {room.status === 'playing' && myPlayer && (
+                <EmojiPanel onSendEmoji={sendEmoji} disabled={loading} />
+              )}
               <div className="status status--info text-xs md:text-sm">
                 {room.status === 'waiting' && 'Warte...'}
                 {room.status === 'playing' && !myPlacementSet && 'Läuft'}
@@ -510,7 +576,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
                   </span>
                 </div>
 
-                {/* Buttons zentriert, begrenzte Breite, SEHR HOCH */}
                 <div className="flex justify-center gap-4">
                   {canCallLiar && (
                     <button
