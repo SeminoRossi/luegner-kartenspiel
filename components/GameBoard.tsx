@@ -460,7 +460,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               <div className="card bg-gradient-to-br from-color-bg-1 to-color-bg-3 border-4 border-color-primary shadow-2xl">
                 <div className="card__body space-y-6">
                   <div className="text-center">
-                    <span className="inline-block px-8 py-4 bg-gradient-to-r from-color-primary to-color-primary-hover text-white rounded-full font-extrabold text-2xl md:text-3xl shadow-lg animate-pulse">
+                    <span className="inline-block px-8 py-4 bg-gradient-to-r from-color-primary to-color-primary-hover text-color-primary rounded-full font-extrabold text-2xl md:text-3xl shadow-lg animate-pulse">
                       ⭐ Du bist am Zug! ⭐
                     </span>
                   </div>
