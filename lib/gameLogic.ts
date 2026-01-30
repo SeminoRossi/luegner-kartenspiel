@@ -90,11 +90,22 @@ export async function startGame(roomId: string) {
       .from('players')
       .update({ 
         cards: sortCards(hands[i]),
-        player_order: i 
+        player_order: i,
+        is_active: true,
+        placement: null,
+        is_winner: null,
+        ready_for_rematch: false
       })
       .eq('id', players[i].id)
   }
 
+  // Lösche alten game_state
+  await supabase
+    .from('game_state')
+    .delete()
+    .eq('room_id', roomId)
+
+  // Erstelle neuen game_state
   await supabase
     .from('game_state')
     .insert({
@@ -116,7 +127,6 @@ export async function startGame(roomId: string) {
 }
 
 async function checkGameEnd(roomId: string) {
-  // Hole alle Spieler mit ihren Platzierungen
   const { data: allPlayers } = await supabase
     .from('players')
     .select('*')
@@ -125,12 +135,10 @@ async function checkGameEnd(roomId: string) {
 
   if (!allPlayers) return
 
-  // Spieler mit 0 Karten die noch keine Platzierung haben
   const playersWithNoCards = allPlayers.filter(p => 
     (p.cards?.length || 0) === 0 && p.placement === null
   )
 
-  // Vergebe Platzierungen für alle Spieler die gerade 0 Karten haben
   for (const player of playersWithNoCards) {
     const placedPlayers = allPlayers.filter(p => p.placement !== null)
     const nextPlacement = placedPlayers.length + 1
@@ -144,7 +152,6 @@ async function checkGameEnd(roomId: string) {
       .eq('id', player.id)
   }
 
-  // Nach dem Update: Check ob nur noch 1 Spieler ohne Platzierung übrig ist
   const { data: updatedPlayers } = await supabase
     .from('players')
     .select('*')
@@ -154,7 +161,6 @@ async function checkGameEnd(roomId: string) {
 
   const playersWithoutPlacement = updatedPlayers.filter(p => p.placement === null)
 
-  // Wenn nur noch 1 Spieler ohne Platzierung → Das ist der Verlierer
   if (playersWithoutPlacement.length === 1) {
     const lastPlace = updatedPlayers.length
     
@@ -211,7 +217,6 @@ export async function playCards(
     quads = hasQuads(remainingCards)
   }
 
-  // Karten aktualisieren OHNE is_active zu ändern
   await supabase
     .from('players')
     .update({ cards: sortCards(remainingCards) })
@@ -253,8 +258,6 @@ export async function playCards(
       }
     })
 
-  // WICHTIG: Check ob Spiel vorbei NACH diesem Zug
-  // Spieler mit 0 Karten bekommen Platzierung
   await checkGameEnd(roomId)
 }
 
@@ -322,7 +325,7 @@ export async function callLiar(roomId: string, callerId: string) {
     .from('players')
     .update({
       cards: sortCards(newCards),
-      is_active: true  // Spieler wird wieder aktiv wenn er Karten bekommt
+      is_active: true
     })
     .eq('id', loser)
 
@@ -352,8 +355,37 @@ export async function callLiar(roomId: string, callerId: string) {
       }
     })
 
-  // Check ob Spiel vorbei ist NACH dem Lügner-Call
   await checkGameEnd(roomId)
 
   return { wasLying, revealedCards: lastCards, loser, winner }
+}
+
+export async function requestRematch(roomId: string, playerId: string) {
+  // Markiere Spieler als bereit für Rematch
+  await supabase
+    .from('players')
+    .update({ ready_for_rematch: true })
+    .eq('id', playerId)
+
+  // Check ob alle Spieler bereit sind
+  const { data: allPlayers } = await supabase
+    .from('players')
+    .select('*')
+    .eq('room_id', roomId)
+
+  if (!allPlayers) return { allReady: false, readyCount: 0, totalCount: 0 }
+
+  const readyPlayers = allPlayers.filter(p => p.ready_for_rematch === true)
+  const allReady = readyPlayers.length === allPlayers.length
+
+  // Wenn alle bereit sind → Starte neues Spiel
+  if (allReady) {
+    await startGame(roomId)
+  }
+
+  return {
+    allReady,
+    readyCount: readyPlayers.length,
+    totalCount: allPlayers.length
+  }
 }
