@@ -380,8 +380,17 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         {/* Playing Screen */}
         {!shouldShowEndScreen && room.status === 'playing' && gameState && myPlayer && (
           <>
+            {/* Du bist am Zug Anzeige (JETZT OBEN) */}
+            {isMyTurn && (
+              <div className="text-center mb-2 animate-bounce-in">
+                <span className="inline-block px-8 py-3 bg-white/90 backdrop-blur border-2 border-color-primary text-color-primary rounded-full font-extrabold text-xl md:text-2xl shadow-lg animate-pulse">
+                  ⭐ Du bist am Zug! ⭐
+                </span>
+              </div>
+            )}
+
             {/* Current Claim Card */}
-            <div className="card bg-gradient-to-br from-color-bg-1 to-color-bg-2">
+            <div className={`card bg-gradient-to-br from-color-bg-1 to-color-bg-2 transition-all duration-300 ${isMyTurn ? 'ring-4 ring-color-primary shadow-2xl scale-[1.02]' : ''}`}>
               <div className="card__body text-center">
                 {gameState.last_claim_rank ? (
                   <>
@@ -459,12 +468,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
             {isMyTurn && (
               <div className="card bg-gradient-to-br from-color-bg-1 to-color-bg-3 border-4 border-color-primary shadow-2xl">
                 <div className="card__body space-y-6">
-                  <div className="text-center">
-                    <span className="inline-block px-8 py-4 bg-gradient-to-r from-color-primary to-color-primary-hover text-color-primary rounded-full font-extrabold text-2xl md:text-3xl shadow-lg animate-pulse">
-                      ⭐ Du bist am Zug! ⭐
-                    </span>
-                  </div>
-
+                  
                   {/* Action Buttons */}
                   <div className="flex flex-col sm:flex-row justify-center gap-6">
                     {/* LÜGNER Button */}
