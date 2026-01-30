@@ -98,165 +98,111 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .from('emoji_reactions')
       .insert({
         room_id: initialRoom.id,
-        player_id: myPlayer.id,
         player_name: myPlayer.player_name,
         emoji: emoji
       })
   }
 
   useEffect(() => {
-    const playerName = localStorage.getItem('player_name')
-    const player = players.find(p => p.player_name === playerName)
-    if (player) setMyPlayerId(player.id)
-
-    const playersChannel = supabase
-      .channel('players-realtime-channel')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${initialRoom.id}` },
-        async () => {
-          await reloadAllData()
-        }
-      )
-      .subscribe()
-
-    const roomChannel = supabase
-      .channel('room-realtime-channel')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'game_rooms', filter: `id=eq.${initialRoom.id}` },
-        async () => {
-          await reloadAllData()
-        }
-      )
-      .subscribe()
-
-    const stateChannel = supabase
-      .channel('state-realtime-channel')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'game_state', filter: `room_id=eq.${initialRoom.id}` },
-        async () => {
-          await reloadAllData()
-        }
-      )
-      .subscribe()
-
-    const emojiChannel = supabase
-      .channel('emoji-realtime-channel')
-      .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'emoji_reactions', filter: `room_id=eq.${initialRoom.id}` },
-        async () => {
-          await loadEmojiReactions()
-        }
-      )
-      .on('postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'emoji_reactions', filter: `room_id=eq.${initialRoom.id}` },
-        async () => {
-          await loadEmojiReactions()
-        }
-      )
-      .subscribe()
+    const storedName = localStorage.getItem('player_name')
+    if (storedName) {
+      const player = players.find(p => p.player_name === storedName)
+      if (player) setMyPlayerId(player.id)
+    }
 
     reloadAllData()
     loadEmojiReactions()
 
-    const cleanupInterval = setInterval(async () => {
-      await supabase.rpc('delete_old_emoji_reactions')
-    }, 2000)
+    const playersChannel = supabase
+      .channel(`players-${initialRoom.id}`)
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${initialRoom.id}` },
+        reloadAllData
+      )
+      .subscribe()
+
+    const roomChannel = supabase
+      .channel(`room-${initialRoom.id}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'game_rooms', filter: `id=eq.${initialRoom.id}` },
+        reloadAllData
+      )
+      .subscribe()
+
+    const stateChannel = supabase
+      .channel(`state-${initialRoom.id}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'game_state', filter: `room_id=eq.${initialRoom.id}` },
+        reloadAllData
+      )
+      .subscribe()
+
+    const emojiChannel = supabase
+      .channel(`emoji-${initialRoom.id}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'emoji_reactions', filter: `room_id=eq.${initialRoom.id}` },
+        loadEmojiReactions
+      )
+      .subscribe()
 
     return () => {
       playersChannel.unsubscribe()
       roomChannel.unsubscribe()
       stateChannel.unsubscribe()
       emojiChannel.unsubscribe()
-      clearInterval(cleanupInterval)
     }
-  }, [initialRoom.id])
+  }, [initialRoom.id, players])
 
-  async function handleStartGame() {
-    setLoading(true)
-    setIsShuffling(true)
-    
-    try {
-      await startGame(initialRoom.id)
-      
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      await reloadAllData()
-      
-      setTimeout(() => {
-        setIsShuffling(false)
-      }, 1500)
-    } catch (err: any) {
-      console.error('Fehler beim Spielstart:', err)
-      alert(err.message)
-      setIsShuffling(false)
-    } finally {
-      setLoading(false)
-    }
+  const canStart = myPlayer?.is_host && players.length >= 2
+  const canCallLiar = gameState?.last_claim_rank && !isMyTurn
+  const shouldShowEndScreen = room.status === 'finished'
+  const myPlayerReady = myPlayer?.ready_for_rematch === true
+
+  const graveyard = gameState?.graveyard || {}
+  const graveyardRanks = Object.keys(graveyard).filter(rank => (graveyard[rank as Rank] || 0) > 0) as Rank[]
+  const availableRanks = RANKS.filter(rank => !graveyardRanks.includes(rank))
+
+  function getClaimSuit(rank: Rank): string {
+    const redRanks: Rank[] = ['7', '8', '10', 'K']
+    return redRanks.includes(rank) ? '♥' : '♠'
   }
 
-  async function handleRematch() {
-    if (!myPlayer) return
-    
+  async function handleStartGame() {
+    if (!canStart || loading) return
     setLoading(true)
     setIsShuffling(true)
-    
+
     try {
-      await requestRematch(initialRoom.id, myPlayer.id)
-      
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      await reloadAllData()
-      
-      if (room?.status === 'playing') {
-        setTimeout(() => {
-          setIsShuffling(false)
-        }, 1500)
-      } else {
-        setIsShuffling(false)
-      }
+      await startGame(initialRoom.id)
+      await new Promise(resolve => setTimeout(resolve, 1500))
     } catch (err: any) {
-      console.error('Fehler beim Rematch:', err)
       alert(err.message)
-      setIsShuffling(false)
     } finally {
       setLoading(false)
+      setIsShuffling(false)
     }
   }
 
   function handleSelectCard(card: Card) {
-    if (selectedCards.some(c => c.id === card.id)) {
-      setSelectedCards(selectedCards.filter(c => c.id !== card.id))
-    } else if (selectedCards.length < 3) {
-      setSelectedCards([...selectedCards, card])
-    }
+    setSelectedCards(prev => {
+      const isSelected = prev.some(c => c.id === card.id)
+      if (isSelected) {
+        return prev.filter(c => c.id !== card.id)
+      } else if (prev.length < 3) {
+        return [...prev, card]
+      }
+      return prev
+    })
   }
 
   async function handlePlayCards() {
-    if (selectedCards.length === 0) {
-      alert('Bitte wähle 1-3 Karten aus')
-      return
-    }
-
-    if (!myPlayer) return
-
+    if (selectedCards.length === 0 || !isMyTurn || loading) return
     setLoading(true)
-    
+
     try {
-      const isFirstRound = !gameState?.last_claim_rank
-      
-      await playCards(
-        initialRoom.id,
-        myPlayer.id,
-        selectedCards,
-        isFirstRound ? claimRank : undefined,
-        isFirstRound ? selectedCards.length : undefined
-      )
-      
+      await playCards(initialRoom.id, selectedCards.map(c => c.id), claimRank)
       setSelectedCards([])
-      
-      setTimeout(async () => {
-        await reloadAllData()
-      }, 500)
     } catch (err: any) {
-      console.error('Fehler beim Karten legen:', err)
       alert(err.message)
     } finally {
       setLoading(false)
@@ -264,367 +210,316 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   }
 
   async function handleCallLiar() {
-    if (!myPlayer) return
-
+    if (!canCallLiar || loading) return
     setLoading(true)
-    
+
     try {
-      const result = await callLiar(initialRoom.id, myPlayer.id)
-      
+      const result = await callLiar(initialRoom.id)
       setRevealedCards(result.revealedCards)
-      setRevealMessage(
-        result.wasLying 
-          ? '🎉 Richtig! Der Spieler hat gelogen!' 
-          : '❌ Falsch! Der Spieler hat die Wahrheit gesagt!'
-      )
+      setRevealMessage(result.message)
       
       setTimeout(() => {
         setRevealedCards(null)
         setRevealMessage('')
-      }, 5000)
-      
-      setTimeout(async () => {
-        await reloadAllData()
-      }, 500)
+      }, 4000)
     } catch (err: any) {
-      console.error('Fehler beim Lügner rufen:', err)
       alert(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
-  const canCallLiar = isMyTurn && (gameState?.pile_cards?.length || 0) > 0
-  const myPlayerReady = myPlayer?.ready_for_rematch === true
+  async function handleRematch() {
+    if (!myPlayer || loading) return
+    setLoading(true)
 
-  const shouldShowEndScreen = room.status === 'finished' || myPlacementSet
-
-  const getClaimSuit = (rank: string) => {
-    const redRanks = ['7', '9', 'J', 'K']
-    return redRanks.includes(rank) ? '♦' : '♠'
+    try {
+      await requestRematch(initialRoom.id, myPlayer.id)
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const removedQuads = gameState?.removed_quads || []
-  
-  const availableRanks = RANKS.filter(rank => !removedQuads.includes(rank))
-  
-  useEffect(() => {
-    if (removedQuads.includes(claimRank) && availableRanks.length > 0) {
-      setClaimRank(availableRanks[0])
-    }
-  }, [removedQuads, claimRank, availableRanks])
-
   return (
-    <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
-      <EmojiDisplay reactions={emojiReactions} />
-
-      <div className="card">
-        <div className="card__body">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold">🎴 Lügner</h1>
-              <p className="text-sm md:text-base text-color-text-secondary">Raum: {roomCode}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              {room.status === 'playing' && myPlayer && (
-                <EmojiPanel onSendEmoji={sendEmoji} disabled={loading} />
-              )}
-              <div className="status status--info text-xs md:text-sm">
-                {room.status === 'waiting' && 'Warte...'}
-                {room.status === 'playing' && !myPlacementSet && 'Läuft'}
-                {shouldShowEndScreen && 'Beendet'}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {room.status === 'playing' && removedQuads.length > 0 && (
-        <div className="card bg-color-bg-4">
+    <div className="min-h-screen bg-gradient-to-br from-color-background via-color-surface to-color-background py-8">
+      <div className="container mx-auto px-4 max-w-6xl space-y-6">
+        
+        {/* Header mit Emoji Panel */}
+        <div className="card bg-gradient-to-r from-color-primary to-color-primary-hover">
           <div className="card__body">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🪦</span>
-                <h3 className="text-sm md:text-base font-semibold">Friedhof</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">🎴 Lügner</h1>
+                <p className="text-white/90 text-sm md:text-base">
+                  Raum: <span className="font-mono font-bold text-xl">{roomCode}</span>
+                </p>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                {removedQuads.map((rank, idx) => {
-                  const suit = getClaimSuit(rank)
-                  const suitColor = ['♥', '♦'].includes(suit) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'
-                  return (
-                    <div 
-                      key={idx}
-                      style={{ width: '50px', height: '75px' }}
-                      className="rounded-lg border-2 border-gray-400 bg-gray-200 dark:bg-gray-700 flex flex-col items-center justify-center opacity-70"
-                    >
-                      <span className={`text-2xl ${suitColor}`}>{suit}</span>
-                      <span className={`text-lg font-bold ${suitColor}`}>{rank}</span>
-                    </div>
-                  )
-                })}
-              </div>
+              <EmojiPanel onSendEmoji={sendEmoji} disabled={!myPlayer} />
             </div>
           </div>
         </div>
-      )}
 
-      {isShuffling && (
-        <div className="card bg-color-bg-1 border-2 border-color-primary">
-          <div className="card__body text-center">
-            <div className="text-4xl md:text-6xl mb-4 animate-bounce">🎴</div>
-            <h2 className="text-xl md:text-2xl font-bold">Karten werden gemischt...</h2>
+        <EmojiDisplay reactions={emojiReactions} />
+
+        {isShuffling && (
+          <div className="card bg-gradient-to-br from-color-bg-1 to-color-bg-2 border-2 border-color-primary">
+            <div className="card__body text-center py-12">
+              <div className="text-8xl mb-6 animate-bounce">🃏</div>
+              <p className="text-3xl font-bold text-color-primary mb-4">Karten werden gemischt...</p>
+              <div className="flex justify-center gap-3 mt-6">
+                <div className="w-4 h-4 bg-color-primary rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
+                <div className="w-4 h-4 bg-color-primary rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
+                <div className="w-4 h-4 bg-color-primary rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {shouldShowEndScreen && rankedPlayers.length > 0 && (
-        <div className="card bg-gradient-to-br from-purple-600 via-blue-600 to-teal-500 border-4 border-yellow-300 shadow-2xl">
-          <div className="card__body text-center py-8">
-            <div className="text-5xl md:text-7xl mb-6 animate-bounce">🏁</div>
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-8">Endstand</h2>
-            
-            <div className="space-y-4 mb-8">
-              {rankedPlayers.map(player => {
-                const isMe = player.id === myPlayerId
-                const placement = player.placement || 0
-                const isWinner = placement === 1
-                const isLoser = placement === players.length
-                const medal = PLACEMENT_MEDALS[placement] || `${placement}.`
+        {/* End Screen */}
+        {shouldShowEndScreen && (
+          <div className="space-y-6">
+            <div className="card bg-gradient-to-br from-yellow-400 via-orange-400 to-red-400 border-4 border-yellow-300">
+              <div className="card__body text-center py-12">
+                <h2 className="text-5xl md:text-6xl font-extrabold text-white mb-8 drop-shadow-lg">
+                  🎉 Spiel Beendet! 🎉
+                </h2>
                 
-                return (
-                  <div 
-                    key={player.id} 
-                    className={`p-4 rounded-xl ${
-                      isWinner ? 'bg-gradient-to-r from-yellow-400 to-yellow-600 animate-pulse' :
-                      isLoser ? 'bg-gradient-to-r from-gray-600 to-gray-800' :
-                      'bg-white/20'
-                    } ${isMe ? 'border-4 border-white' : 'border-2 border-white/50'}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <span className="text-4xl md:text-5xl">{medal}</span>
-                        <div className="text-left">
-                          <div className="text-xl md:text-2xl font-bold text-white">
-                            {player.player_name} {isMe && '(Du)'}
+                <div className="space-y-4 max-w-2xl mx-auto">
+                  {rankedPlayers.map((player) => (
+                    <div
+                      key={player.id}
+                      className="bg-white/95 backdrop-blur rounded-2xl p-6 shadow-2xl transform hover:scale-105 transition-all"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <span className="text-5xl">{PLACEMENT_MEDALS[player.placement!] || `${player.placement}.`}</span>
+                          <div className="text-left">
+                            <p className="text-2xl font-bold text-gray-900">
+                              {player.player_name}
+                              {player.id === myPlayerId && ' (Du)'}
+                            </p>
+                            <p className="text-gray-600">Platz {player.placement}</p>
                           </div>
-                          {isWinner && (
-                            <div className="text-sm md:text-base text-yellow-200 font-semibold">
-                              🏆 Gewinner!
-                            </div>
-                          )}
-                          {isLoser && (
-                            <div className="text-sm md:text-base text-gray-300">
-                              Verlierer
-                            </div>
-                          )}
                         </div>
+                        {player.placement === 1 && (
+                          <div className="text-4xl animate-bounce">👑</div>
+                        )}
                       </div>
-                      <div className="text-right">
-                        <div className="text-lg md:text-xl font-bold text-white">
-                          Platz {placement}
+                    </div>
+                  ))}
+                </div>
+
+                {rankedPlayers.length < players.length && (
+                  <div className="mt-8 p-6 bg-white/20 backdrop-blur rounded-2xl">
+                    <p className="text-white text-2xl font-bold">⏳ Warte auf die anderen Spieler...</p>
+                    <p className="text-white/80 text-lg mt-2">
+                      {rankedPlayers.length} / {players.length} Spieler fertig
+                    </p>
+                  </div>
+                )}
+
+                {rankedPlayers.length === players.length && (
+                  <div className="mt-8 card">
+                    <div className="card__body">
+                      <p className="text-2xl font-bold mb-4">
+                        {myPlayerReady ? '✅ Du bist bereit!' : 'Möchtest du nochmal spielen?'}
+                      </p>
+                      <p className="text-color-text-secondary text-lg mb-6">
+                        {readyForRematchCount} / {players.length} Spieler bereit
+                      </p>
+                      
+                      <button
+                        onClick={handleRematch}
+                        disabled={loading || myPlayerReady}
+                        className={`btn ${myPlayerReady ? 'btn--secondary' : 'btn--primary'} btn--lg`}
+                      >
+                        {loading ? '⏳ Warte...' : myPlayerReady ? '✅ Bereit!' : '🔄 Nochmal spielen'}
+                      </button>
+
+                      {allPlayersReady && !loading && (
+                        <div className="mt-6 p-4 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-xl">
+                          <p className="text-white font-bold text-2xl animate-pulse">
+                            🎉 Alle bereit! Spiel startet...
+                          </p>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
-                )
-              })}
-            </div>
-
-            {rankedPlayers.length < players.length && (
-              <div className="mb-6 p-4 bg-white/10 rounded-xl">
-                <p className="text-white text-lg">
-                  ⏳ Warte auf die anderen Spieler...
-                </p>
-                <p className="text-white/70 text-sm mt-2">
-                  {rankedPlayers.length} / {players.length} Spieler fertig
-                </p>
-              </div>
-            )}
-
-            {rankedPlayers.length === players.length && (
-              <div className="mt-8 p-6 bg-white/10 rounded-xl">
-                <p className="text-white text-lg mb-4">
-                  {myPlayerReady 
-                    ? '✅ Du bist bereit!' 
-                    : 'Möchtest du nochmal spielen?'}
-                </p>
-                <p className="text-white/80 text-sm mb-6">
-                  {readyForRematchCount} / {players.length} Spieler bereit
-                </p>
-                
-                <button
-                  onClick={handleRematch}
-                  disabled={loading || myPlayerReady}
-                  className={`btn ${myPlayerReady ? 'btn--secondary' : 'btn--primary'} text-lg md:text-xl px-8 py-4`}
-                >
-                  {loading ? '⏳ Warte...' : myPlayerReady ? '✅ Bereit!' : '🔄 Nochmal spielen'}
-                </button>
-
-                {allPlayersReady && !loading && (
-                  <p className="text-yellow-300 font-bold text-xl mt-4 animate-pulse">
-                    🎉 Alle bereit! Spiel startet...
-                  </p>
                 )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {room.status === 'waiting' && (
-        <div className="card">
-          <div className="card__body text-center">
-            <h2 className="text-lg md:text-xl font-semibold mb-4">Warte auf Spieler (min. 2)</h2>
-            <p className="text-sm md:text-base text-color-text-secondary mb-6">
-              Code: <span className="font-mono font-bold text-color-primary text-lg md:text-xl">{roomCode}</span>
-            </p>
-            {canStart && (
-              <button
-                onClick={handleStartGame}
-                disabled={loading}
-                className="btn btn--primary text-base md:text-lg px-6 md:px-8 py-2 md:py-3"
-              >
-                {loading ? 'Starte...' : '🎴 Spiel starten'}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!shouldShowEndScreen && room.status === 'playing' && gameState && myPlayer && (
-        <>
+        {/* Waiting Screen */}
+        {room.status === 'waiting' && (
           <div className="card">
-            <div className="card__body text-center">
-              {gameState.last_claim_rank ? (
-                <>
-                  <p className="text-xs md:text-sm text-color-text-secondary mb-3">Aktuelle Ansage:</p>
-                  
-                  <div className="flex justify-center items-center mb-4">
-                    <div className="relative">
-                      <div 
-                        style={{ width: '140px', height: '210px' }}
-                        className="md:w-[180px] md:h-[270px] rounded-2xl border-4 border-color-primary bg-gradient-to-br from-white to-gray-100 dark:from-gray-800 dark:to-gray-900 flex flex-col items-center justify-center shadow-2xl"
-                      >
-                        <span className={`text-7xl md:text-8xl mb-2 ${['♥', '♦'].includes(getClaimSuit(gameState.last_claim_rank)) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'}`}>
-                          {getClaimSuit(gameState.last_claim_rank)}
-                        </span>
-                        <span className={`text-5xl md:text-6xl font-bold ${['♥', '♦'].includes(getClaimSuit(gameState.last_claim_rank)) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'}`}>
-                          {gameState.last_claim_rank}
-                        </span>
-                      </div>
-                      
-                      <div className="absolute -top-3 -right-3 md:-top-4 md:-right-4 w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full border-4 border-white dark:border-gray-800 flex items-center justify-center shadow-xl animate-pulse">
-                        <span className="text-2xl md:text-3xl font-bold text-white">
-                          {gameState.last_claim_count}×
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <p className="text-xs md:text-sm text-color-text-secondary mt-2">
-                    📚 Stapel: {gameState.pile_cards?.length || 0} Karten
-                  </p>
-                </>
-              ) : (
-                <p className="text-base md:text-xl text-color-text-secondary">
-                  Erste Ansage wählen...
-                </p>
+            <div className="card__body text-center py-12">
+              <div className="text-6xl mb-6">👥</div>
+              <h2 className="text-2xl md:text-3xl font-bold mb-4">Warte auf Spieler (min. 2)</h2>
+              <p className="text-lg text-color-text-secondary mb-8">
+                Code: <span className="font-mono font-bold text-color-primary text-2xl">{roomCode}</span>
+              </p>
+              {canStart && (
+                <button
+                  onClick={handleStartGame}
+                  disabled={loading}
+                  className="btn btn--primary btn--lg"
+                >
+                  {loading ? 'Starte...' : '🎴 Spiel starten'}
+                </button>
               )}
             </div>
           </div>
+        )}
 
-          {revealedCards && (
-            <div className="card bg-color-bg-1 border-2 border-color-primary">
+        {/* Playing Screen */}
+        {!shouldShowEndScreen && room.status === 'playing' && gameState && myPlayer && (
+          <>
+            {/* Current Claim Card */}
+            <div className="card bg-gradient-to-br from-color-bg-1 to-color-bg-2">
               <div className="card__body text-center">
-                <h3 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">{revealMessage}</h3>
-                <p className="text-xs md:text-sm text-color-text-secondary mb-3 md:mb-4">Aufgedeckte Karten:</p>
-                <div className="flex justify-center gap-2 md:gap-3 flex-wrap">
-                  {revealedCards.map((card, idx) => {
-                    const suitColor = ['♥', '♦'].includes(card.suit) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'
-                    return (
-                      <div key={idx} style={{ width: '80px', height: '120px' }} className="md:w-24 md:h-36 rounded-xl border-2 border-color-border bg-color-surface flex flex-col items-center justify-center shadow-xl">
-                        <span className={`text-4xl md:text-5xl mb-1 md:mb-2 ${suitColor}`}>{card.suit}</span>
-                        <span className={`text-2xl md:text-3xl font-bold ${suitColor}`}>{card.rank}</span>
+                {gameState.last_claim_rank ? (
+                  <>
+                    <p className="text-sm text-color-text-secondary mb-4">Aktuelle Ansage:</p>
+                    
+                    <div className="flex justify-center items-center mb-6">
+                      <div className="relative">
+                        {/* Modern Card Design */}
+                        <div 
+                          className="w-40 h-60 md:w-48 md:h-72 rounded-3xl border-4 border-color-primary bg-gradient-to-br from-white via-gray-50 to-gray-100 dark:from-gray-800 dark:via-gray-850 dark:to-gray-900 flex flex-col items-center justify-center shadow-2xl transform hover:scale-105 transition-all"
+                        >
+                          <span className={`text-8xl md:text-9xl mb-4 drop-shadow-lg ${['♥', '♦'].includes(getClaimSuit(gameState.last_claim_rank)) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'}`}>
+                            {getClaimSuit(gameState.last_claim_rank)}
+                          </span>
+                          <span className={`text-6xl md:text-7xl font-extrabold drop-shadow ${['♥', '♦'].includes(getClaimSuit(gameState.last_claim_rank)) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'}`}>
+                            {gameState.last_claim_rank}
+                          </span>
+                        </div>
+                        
+                        {/* Count Badge */}
+                        <div className="absolute -top-4 -right-4 w-20 h-20 md:w-24 md:h-24 bg-gradient-to-br from-yellow-400 via-orange-400 to-red-500 rounded-full border-4 border-white dark:border-gray-800 flex items-center justify-center shadow-2xl animate-pulse">
+                          <span className="text-3xl md:text-4xl font-extrabold text-white drop-shadow-lg">
+                            {gameState.last_claim_count}×
+                          </span>
+                        </div>
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {myPlayer.cards && myPlayer.cards.length > 0 && (
-            <PlayerHand
-              cards={myPlayer.cards}
-              selectedCards={selectedCards}
-              onSelectCard={handleSelectCard}
-              disabled={!isMyTurn || loading}
-            />
-          )}
-
-          {isMyTurn && (
-            <div className="card bg-color-bg-1 border-2 border-color-primary">
-              <div className="card__body space-y-6">
-                <div className="text-center">
-                  <span className="inline-block px-6 py-4 bg-color-primary text-color-btn-primary-text rounded-full font-bold text-xl md:text-2xl">
-                    ⭐ Du bist am Zug!
-                  </span>
-                </div>
-
-                {/* BUTTONS - NOCH GRÖßER mit mehr Abstand */}
-                <div className="flex justify-center gap-6 md:gap-8">
-                  {canCallLiar && (
-                    <button
-                      onClick={handleCallLiar}
-                      disabled={loading}
-                      className="w-44 md:w-56 rounded-2xl text-white font-extrabold text-xl md:text-3xl py-10 md:py-12 transition-all duration-200 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-2"
-                      style={{ backgroundColor: '#ef4444' }}
-                    >
-                      <span className="text-3xl md:text-4xl">🚨</span>
-                      <span>{loading ? 'Prüfe...' : 'LÜGNER!'}</span>
-                    </button>
-                  )}
-                  
-                  {myPlayer.cards && myPlayer.cards.length > 0 && (
-                    <button
-                      onClick={handlePlayCards}
-                      disabled={selectedCards.length === 0 || loading}
-                      className="w-44 md:w-56 rounded-2xl bg-color-primary text-color-btn-primary-text font-extrabold text-xl md:text-3xl py-10 md:py-12 transition-all duration-200 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-2"
-                    >
-                      <span className="text-3xl md:text-4xl">🃏</span>
-                      <span>{loading ? 'Lege...' : `${selectedCards.length || '0'} ABLEGEN`}</span>
-                    </button>
-                  )}
-                </div>
-                
-                {!gameState.last_claim_rank && myPlayer.cards && myPlayer.cards.length > 0 && availableRanks.length > 0 && (
-                  <div className="form-group mt-6">
-                    <label className="form-label text-xl md:text-2xl mb-4 font-bold text-center block">
-                      Wähle deine Ansage:
-                    </label>
-                    <select
-                      value={claimRank}
-                      onChange={(e) => setClaimRank(e.target.value as Rank)}
-                      className="form-control text-2xl md:text-3xl py-5 font-bold text-center"
-                    >
-                      {availableRanks.map(rank => (
-                        <option key={rank} value={rank}>{rank}</option>
-                      ))}
-                    </select>
+                    </div>
+                    
+                    <p className="text-sm text-color-text-secondary">
+                      📚 Stapel: <span className="font-bold text-color-primary">{gameState.pile_cards?.length || 0} Karten</span>
+                    </p>
+                  </>
+                ) : (
+                  <div className="py-8">
+                    <div className="text-6xl mb-4">🎴</div>
+                    <p className="text-xl text-color-text-secondary">Erste Ansage wählen...</p>
                   </div>
                 )}
               </div>
             </div>
-          )}
-        </>
-      )}
 
-      <PlayerList
-        players={players}
-        currentPlayerId={gameState?.current_player_id || null}
-        myPlayerId={myPlayerId}
-      />
+            {/* Revealed Cards */}
+            {revealedCards && (
+              <div className="card bg-gradient-to-br from-color-bg-4 to-color-bg-1 border-2 border-color-primary">
+                <div className="card__body text-center">
+                  <h3 className="text-2xl md:text-3xl font-bold mb-6">{revealMessage}</h3>
+                  <p className="text-sm text-color-text-secondary mb-4">Aufgedeckte Karten:</p>
+                  <div className="flex justify-center gap-3 flex-wrap">
+                    {revealedCards.map((card, idx) => {
+                      const suitColor = ['♥', '♦'].includes(card.suit) ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'
+                      return (
+                        <div 
+                          key={idx} 
+                          className="w-24 h-36 md:w-28 md:h-42 rounded-2xl border-3 border-color-border bg-gradient-to-br from-white to-gray-100 dark:from-gray-800 dark:to-gray-900 flex flex-col items-center justify-center shadow-xl animate-bounce-in"
+                        >
+                          <span className={`text-5xl md:text-6xl mb-2 ${suitColor}`}>{card.suit}</span>
+                          <span className={`text-3xl md:text-4xl font-bold ${suitColor}`}>{card.rank}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Player Hand */}
+            {myPlayer.cards && myPlayer.cards.length > 0 && (
+              <PlayerHand
+                cards={myPlayer.cards}
+                selectedCards={selectedCards}
+                onSelectCard={handleSelectCard}
+                disabled={!isMyTurn || loading}
+              />
+            )}
+
+            {/* Action Buttons */}
+            {isMyTurn && (
+              <div className="card bg-gradient-to-br from-color-bg-1 to-color-bg-3 border-4 border-color-primary shadow-2xl">
+                <div className="card__body space-y-6">
+                  <div className="text-center">
+                    <span className="inline-block px-8 py-4 bg-gradient-to-r from-color-primary to-color-primary-hover text-white rounded-full font-extrabold text-2xl md:text-3xl shadow-lg animate-pulse">
+                      ⭐ Du bist am Zug! ⭐
+                    </span>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col sm:flex-row justify-center gap-6">
+                    {canCallLiar && (
+                      <button
+                        onClick={handleCallLiar}
+                        disabled={loading}
+                        className="flex-1 max-w-xs rounded-3xl text-white font-extrabold text-2xl md:text-3xl py-12 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-red-500 to-red-600"
+                      >
+                        <span className="text-5xl">🚨</span>
+                        <span>{loading ? 'Prüfe...' : 'LÜGNER!'}</span>
+                      </button>
+                    )}
+                    
+                    {myPlayer.cards && myPlayer.cards.length > 0 && (
+                      <button
+                        onClick={handlePlayCards}
+                        disabled={selectedCards.length === 0 || loading}
+                        className="flex-1 max-w-xs rounded-3xl bg-gradient-to-br from-color-primary to-color-primary-hover text-white font-extrabold text-2xl md:text-3xl py-12 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-3"
+                      >
+                        <span className="text-5xl">🃏</span>
+                        <span>{loading ? 'Lege...' : `${selectedCards.length || '0'} ABLEGEN`}</span>
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Rank Selection */}
+                  {!gameState.last_claim_rank && myPlayer.cards && myPlayer.cards.length > 0 && availableRanks.length > 0 && (
+                    <div className="form-group">
+                      <label className="form-label text-xl md:text-2xl mb-4 font-bold text-center block">
+                        📢 Wähle deine Ansage:
+                      </label>
+                      <select
+                        value={claimRank}
+                        onChange={(e) => setClaimRank(e.target.value as Rank)}
+                        className="form-control text-2xl md:text-3xl py-6 font-bold text-center"
+                      >
+                        {availableRanks.map(rank => (
+                          <option key={rank} value={rank}>{rank}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Player List */}
+        <PlayerList
+          players={players}
+          currentPlayerId={gameState?.current_player_id || null}
+          myPlayerId={myPlayerId}
+        />
+      </div>
     </div>
   )
 }
