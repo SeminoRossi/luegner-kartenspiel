@@ -194,11 +194,11 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   }
 
   async function handlePlayCards() {
-    if (selectedCards.length === 0 || !isMyTurn || loading) return
+    if (selectedCards.length === 0 || !isMyTurn || loading || !myPlayer) return
     setLoading(true)
 
     try {
-      await playCards(initialRoom.id, selectedCards.map(c => c.id), claimRank)
+      await playCards(initialRoom.id, myPlayer.id, selectedCards, claimRank)
       setSelectedCards([])
     } catch (err: any) {
       alert(err.message)
@@ -208,13 +208,18 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   }
 
   async function handleCallLiar() {
-    if (!canCallLiar || loading) return
+    if (!canCallLiar || loading || !myPlayer) return
     setLoading(true)
 
     try {
-      const result = await callLiar(initialRoom.id)
+      const result = await callLiar(initialRoom.id, myPlayer.id)
       setRevealedCards(result.revealedCards)
-      setRevealMessage(result.message)
+      
+      // Build message from result
+      const message = result.wasLying 
+        ? `🚨 ${result.loser} hat gelogen! Nimmt den Stapel.`
+        : `✅ ${result.loser} hatte recht! ${result.winner} nimmt den Stapel.`
+      setRevealMessage(message)
       
       setTimeout(() => {
         setRevealedCards(null)
