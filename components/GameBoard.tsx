@@ -41,7 +41,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const readyForRematchCount = players.filter(p => p.ready_for_rematch === true).length
   const allPlayersReady = readyForRematchCount === players.length && players.length > 0
 
+  // KRITISCH: Nur auf MEINE Platzierung achten, nicht auf andere!
   const myPlacementSet = myPlayer?.placement !== null && myPlayer?.placement !== undefined
+  const isMyTurn = gameState?.current_player_id === myPlayerId
 
   async function reloadAllData() {
     const { data: updatedPlayers } = await supabase
@@ -239,25 +241,31 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     }
   }
 
-  const isMyTurn = gameState?.current_player_id === myPlayerId
   const canStart = room.status === 'waiting' && myPlayer?.is_host && players.length >= 2
   const canCallLiar = isMyTurn && (gameState?.pile_cards?.length || 0) > 0
   const myPlayerReady = myPlayer?.ready_for_rematch === true
 
-  console.log('GameBoard State:', {
+  console.log('🎮 GameBoard Debug:', {
     roomStatus: room.status,
     myPlayerId,
     myPlayerCards: myPlayer?.cards?.length,
     myPlayerPlacement: myPlayer?.placement,
     myPlacementSet,
-    gameStateExists: !!gameState,
-    rankedPlayersCount: rankedPlayers.length
+    isMyTurn,
+    rankedPlayersCount: rankedPlayers.length,
+    totalPlayers: players.length
   })
 
-  // WICHTIG: Endscreen NUR wenn:
-  // 1. Room Status = finished (Spiel offiziell vorbei) ODER
-  // 2. ICH habe eine Platzierung (ich bin raus)
-  const showEndScreen = room.status === 'finished' || myPlacementSet
+  // ULTRA-KRITISCH: Zeige Endscreen NUR wenn:
+  // 1. Room Status ist OFFIZIELL "finished" ODER
+  // 2. ICH PERSÖNLICH habe eine Platzierung bekommen
+  // NICHT wenn andere Spieler 0 Karten haben oder Platzierungen haben!
+  const shouldShowEndScreen = room.status === 'finished' || myPlacementSet
+  
+  console.log('🔍 Screen Decision:', {
+    shouldShowEndScreen,
+    reason: room.status === 'finished' ? 'room finished' : myPlacementSet ? 'my placement set' : 'still playing'
+  })
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
@@ -272,7 +280,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
               <div className="status status--info text-xs md:text-sm">
                 {room.status === 'waiting' && 'Warte...'}
                 {room.status === 'playing' && !myPlacementSet && 'Läuft'}
-                {(room.status === 'finished' || myPlacementSet) && 'Beendet'}
+                {shouldShowEndScreen && 'Beendet'}
               </div>
             </div>
           </div>
@@ -288,8 +296,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         </div>
       )}
 
-      {/* ENDSCREEN: Nur wenn ICH fertig bin ODER Spiel offiziell finished */}
-      {showEndScreen && rankedPlayers.length > 0 && (
+      {shouldShowEndScreen && rankedPlayers.length > 0 && (
         <div className="card bg-gradient-to-br from-purple-600 via-blue-600 to-teal-500 border-4 border-yellow-300 shadow-2xl">
           <div className="card__body text-center py-8">
             <div className="text-5xl md:text-7xl mb-6 animate-bounce">🏁</div>
@@ -403,8 +410,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
         </div>
       )}
 
-      {/* SPIEL-SCREEN: Nur wenn room = playing UND ich keine Platzierung habe UND ich Karten habe */}
-      {room.status === 'playing' && !myPlacementSet && gameState && myPlayer && (
+      {!shouldShowEndScreen && room.status === 'playing' && gameState && myPlayer && (
         <>
           <div className="card">
             <div className="card__body text-center">
