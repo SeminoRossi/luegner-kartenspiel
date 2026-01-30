@@ -45,19 +45,11 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const isMyTurn = gameState?.current_player_id === myPlayerId
 
   async function reloadAllData() {
-    console.log('🔄 reloadAllData called')
-    
     const { data: updatedPlayers } = await supabase
       .from('players')
       .select('*')
       .eq('room_id', initialRoom.id)
       .order('player_order')
-    
-    console.log('📊 Players from DB:', updatedPlayers?.map(p => ({
-      name: p.player_name,
-      cards: p.cards?.length,
-      placement: p.placement
-    })))
     
     if (updatedPlayers) setPlayers(updatedPlayers)
 
@@ -66,8 +58,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .select('*')
       .eq('id', initialRoom.id)
       .single()
-    
-    console.log('🏠 Room from DB:', { status: updatedRoom?.status })
     
     if (updatedRoom) setRoom(updatedRoom)
 
@@ -83,17 +73,13 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   useEffect(() => {
     const playerName = localStorage.getItem('player_name')
     const player = players.find(p => p.player_name === playerName)
-    if (player) {
-      console.log('👤 My player ID set:', player.id, player.player_name)
-      setMyPlayerId(player.id)
-    }
+    if (player) setMyPlayerId(player.id)
 
     const playersChannel = supabase
       .channel('players-realtime-channel')
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${initialRoom.id}` },
-        async (payload) => {
-          console.log('🔔 Players changed event:', payload.eventType, payload.new)
+        async () => {
           await reloadAllData()
         }
       )
@@ -103,8 +89,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .channel('room-realtime-channel')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'game_rooms', filter: `id=eq.${initialRoom.id}` },
-        async (payload) => {
-          console.log('🔔 Room changed event:', payload.eventType, payload.new)
+        async () => {
           await reloadAllData()
         }
       )
@@ -114,8 +99,7 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
       .channel('state-realtime-channel')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'game_state', filter: `room_id=eq.${initialRoom.id}` },
-        async (payload) => {
-          console.log('🔔 State changed event:', payload.eventType)
+        async () => {
           await reloadAllData()
         }
       )
@@ -201,8 +185,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     try {
       const isFirstRound = !gameState?.last_claim_rank
       
-      console.log('🃏 Playing cards:', selectedCards.length)
-      
       await playCards(
         initialRoom.id,
         myPlayer.id,
@@ -230,8 +212,6 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
     setLoading(true)
     
     try {
-      console.log('🚨 Calling liar')
-      
       const result = await callLiar(initialRoom.id, myPlayer.id)
       
       setRevealedCards(result.revealedCards)
@@ -262,42 +242,9 @@ export default function GameBoard({ roomCode, initialPlayers, initialRoom }: Gam
   const myPlayerReady = myPlayer?.ready_for_rematch === true
 
   const shouldShowEndScreen = room.status === 'finished' || myPlacementSet
-  
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-  console.log('🎮 RENDER - GameBoard State:')
-  console.log('  Room Status:', room.status)
-  console.log('  My Player ID:', myPlayerId)
-  console.log('  My Player Name:', myPlayer?.player_name)
-  console.log('  My Cards Count:', myPlayer?.cards?.length)
-  console.log('  My Placement:', myPlayer?.placement)
-  console.log('  My Placement Set?:', myPlacementSet)
-  console.log('  Is My Turn?:', isMyTurn)
-  console.log('  Ranked Players:', rankedPlayers.length)
-  console.log('  Total Players:', players.length)
-  console.log('🔍 Screen Decision:')
-  console.log('  Should Show End Screen?:', shouldShowEndScreen)
-  console.log('  Reason:', room.status === 'finished' ? '❌ Room is FINISHED' : myPlacementSet ? '❌ My placement is SET' : '✅ Still PLAYING')
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
   return (
     <div className="container mx-auto py-4 px-2 space-y-4 md:py-8 md:space-y-6">
-      {/* Debug Info Card */}
-      <div className="card" style={{ backgroundColor: '#ff000020', border: '2px solid red' }}>
-        <div className="card__body">
-          <h3 style={{ color: 'red', fontWeight: 'bold' }}>🐛 DEBUG INFO</h3>
-          <pre style={{ fontSize: '12px', overflow: 'auto' }}>
-            {JSON.stringify({
-              roomStatus: room.status,
-              myPlacement: myPlayer?.placement,
-              myCards: myPlayer?.cards?.length,
-              shouldShowEndScreen,
-              isMyTurn,
-              rankedPlayersCount: rankedPlayers.length
-            }, null, 2)}
-          </pre>
-        </div>
-      </div>
-
       <div className="card">
         <div className="card__body">
           <div className="flex justify-between items-center">
