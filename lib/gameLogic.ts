@@ -322,7 +322,14 @@ export async function callLiar(roomId: string, callerId: string) {
     .eq('id', loser)
     .single()
 
+  const { data: winnerPlayer } = await supabase
+    .from('players')
+    .select('player_name')
+    .eq('id', winner)
+    .single()
+
   let newCards = [...loserPlayer!.cards, ...pileCards]
+
   
   const removedQuads = [...(gameState.removed_quads || [])]
   let quads = hasQuads(newCards)
@@ -371,8 +378,14 @@ export async function callLiar(roomId: string, callerId: string) {
 
   await assignPlacements(roomId)
 
-  return { wasLying, revealedCards: lastCards, loser, winner }
+   return {
+    wasLying,
+    revealedCards: lastCards,
+    loser: loserPlayer!.player_name,
+    winner: winnerPlayer!.player_name,
+  }
 }
+
 
 export async function requestRematch(roomId: string, playerId: string) {
   await supabase
